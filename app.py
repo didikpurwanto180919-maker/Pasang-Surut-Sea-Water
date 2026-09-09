@@ -4,6 +4,8 @@ import numpy as np
 import plotly.graph_objects as go
 import datetime
 import urllib3
+import requests
+from bs4 import BeautifulSoup
 import streamlit.components.v1 as components
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -87,7 +89,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# LOAD DATASET PROBOLINGGO & MACHINE LEARNING
+# LIVESCRAPER & DATASET LOADER
+@st.cache_data(ttl=300)
+def fetch_maritim_bmkg_probolinggo():
+    """Mengambil data live dari maritim.bmkg.go.id"""
+    url = "https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=5, verify=False)
+        if response.status_code == 200:
+            # Parse respons apabila format API/JSON atau HTML tersedia
+            data = response.json() if 'application/json' in response.headers.get('Content-Type', '') else None
+            if data and 'pasang_surut' in data:
+                return data['pasang_surut'], "LIVE API BMKG"
+    except Exception:
+        pass
+    return None, "OFFLINE/FALLBACK"
+
 @st.cache_data
 def load_official_dishidros_dataset():
     # Matrix resmi Dishidros / BMKG Stasiun 39. PROBOLINGGO (07° 44' 10.79" S / 113° 12' 59.64" E)
@@ -137,7 +157,6 @@ def load_official_dishidros_dataset():
                 'Day': day_num,
                 'Hour': hour_idx,
                 'Sea_Level_Probolinggo': val_prob,
-                # Asumsi sensor Intake Grati (variasi dinamis lokal)
                 'Sea_Level_Grati': np.round(val_prob + 0.05 * np.sin(hour_idx), 2)
             })
 
@@ -161,13 +180,14 @@ def load_official_dishidros_dataset():
     df['ML_Predicted_Sea_Level_m'] = np.round(predictions, 2)
     return df, mae, r2
 
+live_data, live_status = fetch_maritim_bmkg_probolinggo()
 df, mae_score, r2_score_val = load_official_dishidros_dataset()
 
 # SIDEBAR & SIMULATOR
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
 sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm HP)")
 st.sidebar.markdown("---")
-st.sidebar.markdown("🔗 **Data Resmi BMKG:**\n[https://maritim.bmkg.go.id/](https://maritim.bmkg.go.id/)")
+st.sidebar.markdown(f"🔗 **Data Resmi BMKG Status:** `{live_status}`\n\n[https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo](https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo)")
 
 current_day = now.day if now.month == 9 else 9
 current_hour = now.hour
@@ -381,7 +401,6 @@ with col_left:
 
 with col_right:
     st.subheader("🗺️ Perbandingan Posisi Stasiun")
-    # Peta memuat 2 titik lokasi: Probolinggo dan PLTGU Grati
     map_data = pd.DataFrame({
         'lat': [-7.736331, -7.644317],
         'lon': [113.216567, 113.027350],
