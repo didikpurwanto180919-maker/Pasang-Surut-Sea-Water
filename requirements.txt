@@ -1,6 +1,7 @@
 streamlit
-pandas
-openpyxl
-plotly
-scikit-learn
 numpy
+pandas
+requests
+matplotlib
+scikit-learn
+tensorflow
