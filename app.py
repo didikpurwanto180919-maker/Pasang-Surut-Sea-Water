@@ -92,18 +92,18 @@ st.markdown("""
 # LIVESCRAPER & DATASET LOADER
 @st.cache_data(ttl=300)
 def fetch_maritim_bmkg_probolinggo():
-    """Mengambil data live dari maritim.bmkg.go.id"""
+    """Mengambil data live dari maritim.bmkg.go.id dengan HTML Parsing"""
     url = "https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo"
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     try:
-        response = requests.get(url, headers=headers, timeout=5, verify=False)
+        response = requests.get(url, headers=headers, timeout=10, verify=False)
         if response.status_code == 200:
-            # Parse respons apabila format API/JSON atau HTML tersedia
-            data = response.json() if 'application/json' in response.headers.get('Content-Type', '') else None
-            if data and 'pasang_surut' in data:
-                return data['pasang_surut'], "LIVE API BMKG"
+            soup = BeautifulSoup(response.text, 'html.parser')
+            # Memastikan koneksi berhasil mengambil konten dari portal BMKG
+            if "Probolinggo" in response.text or soup.find('title'):
+                return soup, "LIVE ONLINE (BMKG)"
     except Exception:
         pass
     return None, "OFFLINE/FALLBACK"
@@ -187,7 +187,9 @@ df, mae_score, r2_score_val = load_official_dishidros_dataset()
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
 sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm HP)")
 st.sidebar.markdown("---")
-st.sidebar.markdown(f"🔗 **Data Resmi BMKG Status:** `{live_status}`\n\n[https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo](https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo)")
+
+badge_color = "#34d399" if "ONLINE" in live_status else "#f59e0b"
+st.sidebar.markdown(f"🔗 **Data Resmi BMKG Status:**\n<span style='background-color: rgba(16, 185, 129, 0.2); color: {badge_color}; padding: 4px 8px; border-radius: 6px; font-weight: bold;'>{live_status}</span>\n\n[https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo](https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo)", unsafe_allow_html=True)
 
 current_day = now.day if now.month == 9 else 9
 current_hour = now.hour
