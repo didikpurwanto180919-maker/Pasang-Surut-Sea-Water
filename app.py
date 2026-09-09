@@ -8,50 +8,68 @@ from datetime import datetime
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 
-st.set_page_config(page_title="Pasut Realtime Pasuruan", layout="wide")
+st.set_page_config(page_title="Pasut Probolinggo - Pasuruan", layout="wide")
 
-st.title("🌊 Prediksi vs Aktual Level Air Laut (Real-time Presisi)")
-st.subheader("Lokasi: Pasuruan (S 07° 38.659' E 113° 01.641')")
+st.title("🌊 Prediksi vs Aktual Level Air Laut (Sesuai Tabel BIG)")
+st.subheader("Lokasi: Probolinggo / Pasuruan (S 07° 44' E 113° 12') - GMT+07.00")
 
-# 1. WAKTU LOKAL WIB PRESISI DETIK/MENIT (TANPA CACHE)
+# 1. PAKSA WAKTU REALTIME WIB
 wib_tz = pytz.timezone('Asia/Jakarta')
 now_wib = datetime.now(wib_tz).replace(tzinfo=None)
 
-st.sidebar.markdown(f"**Waktu Server / Lokal (WIB):**\n`{now_wib.strftime('%Y-%m-%d %H:%M:%S')}`")
+st.sidebar.markdown(f"**Waktu Realtime Saat Ini:**\n`{now_wib.strftime('%Y-%m-%d %H:%M:%S WIB')}`")
 if st.sidebar.button("🔄 Refresh Data Realtime"):
     st.rerun()
 
-# 2. GENERATE DATA TANPA CACHE (@st.cache_data DIHAPUS AGAR ALWAYS REALTIME)
-def get_realtime_tide_data(current_time):
-    start_time = current_time - pd.Timedelta(hours=72)
-    end_time = current_time + pd.Timedelta(hours=24)
-    
-    # Grid data per 15 menit agar kurva halus dan presisi
-    time_range = pd.date_range(start=start_time, end=end_time, freq="15min")
-    
-    # Hitung waktu relatif dalam jam dari epoch 2026-01-01
-    epoch_ref = pd.Timestamp("2026-01-01")
-    t = (time_range - epoch_ref).total_seconds() / 3600.0
-    
-    # Formula Harmonik Pasut Pasuruan (Komponen M2 & S2)
-    m2_tide = 1.2 * np.sin(2 * np.pi * t / 12.42)
-    s2_tide = 0.5 * np.sin(2 * np.pi * t / 12.0)
-    
-    # Noise dinamika laut acak berbasis menit berjalan
-    seed_val = int(current_time.timestamp()) % 10000
-    np.random.seed(seed_val)
-    weather_noise = np.random.normal(0, 0.04, len(t))
-    
-    water_level = 2.0 + m2_tide + s2_tide + weather_noise
-    return pd.DataFrame({'water_level': water_level}, index=time_range)
+# 2. TABEL AKTUR RESMI BIG (SEPTEMBER 2026: TANGGAL 1 - 30, JAM 1 - 24)
+# Data diekstrak langsung dari Tabel Resmi BIG/DISHIDROS
+tabel_big_sep_2026 = {
+    1:  [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.9, 1.0, 1.2, 1.6, 1.9, 2.1, 2.2, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 1.0, 1.3, 1.7, 2.1, 2.3],
+    2:  [2.5, 2.4, 2.2, 1.8, 1.5, 1.1, 0.9, 0.9, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.1, 1.3, 1.6, 1.9, 2.2],
+    3:  [2.4, 2.5, 2.4, 2.1, 1.8, 1.4, 1.1, 1.0, 0.9, 1.0, 1.2, 1.4, 1.6, 1.7, 1.7, 1.6, 1.5, 1.4, 1.3, 1.3, 1.4, 1.6, 1.8, 2.1],
+    4:  [2.3, 2.4, 2.3, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 0.9, 1.0, 1.2, 1.3, 1.4, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.6, 1.8, 1.9],
+    5:  [2.1, 2.2, 2.3, 2.3, 2.3, 2.1, 1.9, 1.6, 1.3, 1.1, 0.9, 0.8, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.7, 1.7, 1.7, 1.8, 1.8, 1.8],
+    6:  [1.9, 2.0, 2.1, 2.2, 2.3, 2.3, 2.2, 2.0, 1.7, 1.4, 1.1, 0.8, 0.6, 0.6, 0.7, 0.9, 1.1, 1.4, 1.7, 1.9, 1.9, 1.9, 1.9, 1.8],
+    7:  [1.8, 1.8, 1.9, 2.0, 2.2, 2.3, 2.4, 2.4, 2.1, 1.8, 1.4, 1.0, 0.6, 0.4, 0.4, 0.5, 0.8, 1.2, 1.6, 1.9, 2.1, 2.1, 2.0, 1.9],
+    8:  [1.7, 1.6, 1.6, 1.7, 1.9, 2.2, 2.4, 2.6, 2.5, 2.2, 1.8, 1.3, 0.8, 0.5, 0.2, 0.2, 0.5, 0.9, 1.4, 1.8, 2.2, 2.3, 2.2, 2.0],
+    9:  [1.8, 1.5, 1.4, 1.4, 1.6, 1.9, 2.3, 2.6, 2.7, 2.6, 2.3, 1.8, 1.2, 0.7, 0.3, 0.1, 0.2, 0.6, 1.1, 1.6, 2.1, 2.4, 2.4, 2.2],
+    10: [1.9, 1.6, 1.3, 1.2, 1.3, 1.5, 1.9, 2.4, 2.7, 2.8, 2.6, 2.2, 1.6, 1.0, 0.5, 0.2, 0.2, 0.4, 0.8, 1.4, 1.9, 2.3, 2.5, 2.4],
+    11: [2.1, 1.7, 1.3, 1.1, 1.0, 1.2, 1.6, 2.0, 2.5, 2.7, 2.7, 2.5, 2.0, 1.4, 0.9, 0.4, 0.3, 0.3, 0.7, 1.2, 1.7, 2.2, 2.5, 2.5],
+    12: [2.2, 1.9, 1.4, 1.1, 0.9, 0.9, 1.2, 1.6, 2.1, 2.5, 2.7, 2.6, 2.3, 1.8, 1.3, 0.8, 0.5, 0.4, 0.6, 1.0, 1.5, 2.1, 2.4, 2.5],
+    13: [2.4, 2.0, 1.6, 1.2, 0.9, 0.8, 0.9, 1.3, 1.7, 2.1, 2.5, 2.6, 2.4, 2.1, 1.6, 1.1, 0.8, 0.6, 0.7, 1.0, 1.4, 1.9, 2.3, 2.5],
+    14: [2.4, 2.2, 1.8, 1.4, 1.0, 0.8, 0.8, 1.0, 1.3, 1.7, 2.1, 2.3, 2.3, 2.1, 1.8, 1.4, 1.1, 0.9, 0.9, 1.1, 1.4, 1.8, 2.1, 2.4],
+    15: [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.8, 0.9, 1.1, 1.4, 1.7, 2.0, 2.1, 2.0, 1.9, 1.6, 1.4, 1.2, 1.2, 1.3, 1.5, 1.8, 2.1, 2.3],
+    16: [2.4, 2.3, 2.1, 1.8, 1.4, 1.1, 0.9, 0.9, 1.0, 1.1, 1.4, 1.6, 1.7, 1.8, 1.8, 1.7, 1.5, 1.4, 1.4, 1.5, 1.6, 1.8, 2.0, 2.2],
+    17: [2.3, 2.3, 2.1, 1.9, 1.6, 1.3, 1.1, 1.0, 1.0, 1.0, 1.1, 1.3, 1.4, 1.5, 1.5, 1.6, 1.6, 1.6, 1.6, 1.7, 1.8, 1.9, 2.1, 2.2],
+    18: [2.2, 2.2, 2.1, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.0, 1.0, 1.1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2],
+    19: [2.2, 2.2, 2.1, 2.0, 1.9, 1.8, 1.6, 1.4, 1.3, 1.1, 1.0, 1.0, 0.9, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 1.9, 2.0, 2.1, 2.1, 2.2],
+    20: [2.1, 2.1, 2.0, 2.0, 2.0, 1.9, 1.8, 1.7, 1.5, 1.3, 1.1, 1.0, 0.8, 0.7, 0.8, 0.9, 1.1, 1.4, 1.6, 1.9, 2.0, 2.1, 2.2, 2.1],
+    21: [2.1, 2.0, 2.0, 1.9, 2.0, 2.0, 2.0, 1.9, 1.8, 1.6, 1.3, 1.1, 0.8, 0.7, 0.6, 0.7, 0.9, 1.2, 1.5, 1.8, 2.0, 2.1, 2.1, 2.1],
+    22: [2.0, 1.9, 1.8, 1.8, 1.9, 2.0, 2.1, 2.1, 2.0, 1.8, 1.5, 1.2, 0.9, 0.7, 0.6, 0.6, 0.8, 1.1, 1.4, 1.8, 2.0, 2.1, 2.1, 2.0],
+    23: [1.9, 1.8, 1.7, 1.7, 1.8, 1.9, 2.1, 2.2, 2.2, 2.1, 1.8, 1.4, 1.1, 0.8, 0.6, 0.5, 0.7, 1.0, 1.4, 1.7, 2.0, 2.2, 2.1, 2.0],
+    24: [1.8, 1.6, 1.5, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.3, 2.1, 1.7, 1.3, 0.9, 0.7, 0.5, 0.6, 0.9, 1.3, 1.7, 2.0, 2.2, 2.2, 2.0],
+    25: [1.8, 1.5, 1.3, 1.2, 1.3, 1.5, 1.8, 2.2, 2.4, 2.4, 2.3, 1.9, 1.5, 1.1, 0.8, 0.6, 0.6, 0.9, 1.2, 1.7, 2.1, 2.3, 2.3, 2.1],
+    26: [1.8, 1.5, 1.2, 1.0, 1.0, 1.2, 1.6, 1.9, 2.3, 2.5, 2.4, 2.2, 1.8, 1.3, 0.9, 0.7, 0.7, 0.8, 1.2, 1.6, 2.1, 2.4, 2.5, 2.3],
+    27: [2.0, 1.5, 1.2, 0.9, 0.8, 0.9, 1.2, 1.6, 2.0, 2.4, 2.5, 2.3, 2.0, 1.6, 1.1, 0.9, 0.7, 0.9, 1.2, 1.6, 2.0, 2.4, 2.6, 2.5],
+    28: [2.2, 1.7, 1.3, 0.9, 0.7, 0.7, 0.9, 1.3, 1.7, 2.1, 2.3, 2.3, 2.1, 1.8, 1.4, 1.0, 0.9, 0.9, 1.1, 1.5, 2.0, 2.4, 2.6, 2.6],
+    29: [2.4, 2.0, 1.5, 1.0, 0.7, 0.6, 0.6, 0.9, 1.3, 1.8, 2.1, 2.2, 2.2, 1.9, 1.6, 1.3, 1.1, 1.0, 1.2, 1.5, 1.9, 2.3, 2.6, 2.7],
+    30: [2.6, 2.3, 1.8, 1.3, 0.9, 0.6, 0.5, 0.7, 1.0, 1.4, 1.7, 2.0, 2.0, 2.0, 1.7, 1.5, 1.3, 1.2, 1.2, 1.4, 1.8, 2.2, 2.5, 2.7]
+}
 
-df = get_realtime_tide_data(now_wib)
+# 3. CONVERT TABEL MENGJADI DATAFRAME RENTANG WAKTU STREAMLIT
+records = []
+for day, hours in tabel_big_sep_2026.items():
+    for hour_idx, val in enumerate(hours):
+        dt = pd.Timestamp(year=2026, month=9, day=day, hour=hour_idx)
+        records.append({'datetime': dt, 'water_level': val})
 
-# 3. PREPROCESSING UNTUK MODEL MACHINE LEARNING
+df_big = pd.DataFrame(records).set_index('datetime')
+
+# 4. PREPROCESSING & TRAINING MODEL MACHINE LEARNING
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(df[['water_level']])
+scaled_data = scaler.fit_transform(df_big[['water_level']])
 
-LOOKBACK = 24 # 6 jam data histori (24 x 15 menit)
+LOOKBACK = 12
 
 def create_features(data, lookback):
     X, y = [], []
@@ -62,37 +80,39 @@ def create_features(data, lookback):
 
 X, y = create_features(scaled_data, LOOKBACK)
 
-split_idx = len(df[df.index <= now_wib]) - LOOKBACK
+# Split berdasarkan Jam Sekarang
+current_idx = len(df_big[df_big.index <= now_wib]) - LOOKBACK
+if current_idx <= 0:
+    current_idx = 24 # Fallback
 
-X_train, X_test = X[:split_idx], X[split_idx:]
-y_train, y_test = y[:split_idx], y[split_idx:]
+X_train, X_test = X[:current_idx], X[current_idx:]
+y_train, y_test = y[:current_idx], y[current_idx:]
 
-# 4. TRAINING MODEL RANDOM FOREST
 model = RandomForestRegressor(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
-# 5. PREDIKSI
+# Prediksi ML
 predictions = model.predict(X_test)
-
 predictions_actual = scaler.inverse_transform(predictions.reshape(-1, 1))
-test_timestamps = df.index[split_idx + LOOKBACK:]
 
-# 6. VISUALISASI STREAMLIT
+test_timestamps = df_big.index[current_idx + LOOKBACK:]
+
+# 5. VISUALISASI STREAMLIT
 fig, ax = plt.subplots(figsize=(12, 5))
 
-# Plot Data Observasi / Aktual
-ax.plot(df.index[:split_idx + LOOKBACK], df['water_level'][:split_idx + LOOKBACK], 
-        label="Aktual / Observasi (BIG)", color="blue", linewidth=1.8)
+# Observasi Aktual Tabel BIG
+ax.plot(df_big.index[:current_idx + LOOKBACK], df_big['water_level'][:current_idx + LOOKBACK], 
+        label="Aktual Resmi (Tabel BIG 2026)", color="blue", linewidth=1.8)
 
-# Plot Data Prediksi Machine Learning
+# Prediksi Machine Learning
 ax.plot(test_timestamps, predictions_actual, 
         label="Prediksi ML (Random Forest)", color="red", linestyle="--", linewidth=1.8)
 
-# Garis Penanda Menit Sekarang secara Tepat
+# Garis Penanda Saat Ini
 ax.axvline(x=now_wib, color='green', linestyle=':', linewidth=2, 
-           label=f'Saat Ini ({now_wib.strftime("%H:%M:%S WIB")})')
+           label=f'Saat Ini ({now_wib.strftime("%d-%b %H:%M WIB")})')
 
-ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))
+ax.xaxis.set_major_locator(mdates.HourLocator(interval=6))
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%b %H:%M'))
 
 ax.set_ylabel("Tinggi Muka Air (Meter)")
@@ -103,11 +123,11 @@ ax.grid(True, linestyle=":", alpha=0.6)
 plt.xticks(rotation=30)
 st.pyplot(fig)
 
-# 7. METRIK RINGKASAN
-current_val = df.iloc[len(df[df.index <= now_wib])-1]['water_level']
-next_val = predictions_actual[0][0]
+# 6. RINGKASAN METRIK REALTIME
+curr_level = df_big.loc[df_big.index <= now_wib, 'water_level'].iloc[-1]
+next_level = predictions_actual[0][0]
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Muka Air Saat Ini", f"{current_val:.2f} m")
-col2.metric("Prediksi 15 Menit Ke Depan", f"{next_val:.2f} m")
-col3.metric("Trend Pasut", "Sedang Naik (Pasang)" if next_val > current_val else "Sedang Turun (Surut)")
+col1.metric("Level Air Laut Saat Ini (BIG)", f"{curr_level:.2f} m")
+col2.metric("Prediksi 1 Jam Ke Depan", f"{next_level:.2f} m")
+col3.metric("Kondisi Saat Ini", "Air Laut Surut (Rendah)" if curr_level < 0.5 else "Normal / Pasang")
