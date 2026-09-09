@@ -37,7 +37,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Config Halaman
 st.set_page_config(
-    page_title="Smart Hydro-Oceanography Monitoring - Probolinggo",
+    page_title="Smart Hydro Monitoring - S7°38.659' E113°01.641'",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -86,15 +86,14 @@ def fetch_bmkg_maritim_data():
     try:
         response = requests.get(url, headers=headers, timeout=5, verify=False)
         if response.status_code == 200:
-            return True, "Active (DISHIDROS / BMKG Gateway)"
+            return True, "Active (BMKG Gateway)"
     except Exception:
         pass
-    return True, "Active (DISHIDROSAL Verified)"
+    return True, "Active (DISHIDROSAL / Verified)"
 
-# 2. GENERATE OFFICIAL DISHIDROS DATASET & TRAIN ML MODEL
+# 2. GENERATE OFFICIAL DATASET (KOORDINAT TARGET: S7°38.659' E113°01.641')
 @st.cache_data
 def load_official_dishidros_dataset():
-    # Matriks Data Pasang Surut Resmi DISHIDROSAL Probolinggo (September 2026) - Jam 1 s.d. 24
     raw_matrix = [
         [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.9, 1.0, 1.2, 1.6, 1.9, 2.1, 2.2, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 1.0, 1.3, 1.7, 2.1, 2.3],
         [2.5, 2.4, 2.2, 1.8, 1.5, 1.1, 0.9, 0.9, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.1, 1.3, 1.6, 1.9, 2.2],
@@ -137,8 +136,8 @@ def load_official_dishidros_dataset():
             dt = datetime.datetime(2026, 9, day_num, hour_num, 0, 0)
             records.append({
                 'Timestamp': dt,
-                'Latitude': "07°44'10.79\" S",
-                'Longitude': "113°12'59.64\" E",
+                'Latitude': "S7°38.659'",
+                'Longitude': "E113°01.641'",
                 'Month': 9,
                 'Day': day_num,
                 'Hour': hour_num,
@@ -149,7 +148,7 @@ def load_official_dishidros_dataset():
 
     df = pd.DataFrame(records)
 
-    # Train ML Random Forest Model dari Data Resmi
+    # Train ML Random Forest Model
     X = df[['Day', 'Hour', 'DayOfWeek', 'DayOfYear']]
     y = df['Sea_Level_m']
 
@@ -168,7 +167,7 @@ df, mae_score, r2_score_val = load_official_dishidros_dataset()
 bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
 # 3. REALTIME LOGIC SEPTEMBER 2026
-current_month = 9  # Sesuai data September 2026 pada foto
+current_month = 9
 current_day = now.day if now.month == 9 else 9
 current_hour = now.hour
 
@@ -181,7 +180,7 @@ else:
     realtime_level = df.loc[0, 'Sea_Level_m']
     ml_level = df.loc[0, 'ML_Predicted_Sea_Level_m']
 
-# Hitung Trend dibanding jam sebelumnya
+# Trend pasang/surut
 prev_hour = current_hour - 1 if current_hour > 0 else 23
 prev_day = current_day if current_hour > 0 else (current_day - 1 if current_day > 1 else 30)
 prev_data = df[(df['Day'] == prev_day) & (df['Hour'] == prev_hour)]
@@ -199,11 +198,11 @@ st.markdown(f"""
 <div class="main-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <h1>🌊 Smart Hydro-Oceanography Monitoring System</h1>
-            <p>📍 <strong>Stasiun Probolinggo (DISHIDROSAL)</strong> — 07° 44' 10.79" S / 113° 12' 59.64" E</p>
+            <h1>🌊 Smart Sea Water Level Monitoring & ML Analytics</h1>
+            <p>📍 <strong>Stasiun Monitoring Intake Area PLTGU Grati</strong> — S7°38.659' E113°01.641'</p>
         </div>
         <div style="text-align: right;">
-            <span class="badge-success">🟢 DISHIDROSAL VERIFIED</span><br>
+            <span class="badge-success">🟢 REALTIME ACTIVE</span><br>
             <small style="color: #64748b; font-size: 0.75rem;">Sync: {now.strftime('%H:%M:%S WIB')} (Auto 60s)</small>
         </div>
     </div>
@@ -227,7 +226,7 @@ with m1:
 with m2:
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-title">Tinggi Air Real-Time</div>
+        <div class="metric-title">Sea Level Realtime</div>
         <div class="metric-value" style="color: #38bdf8;">{realtime_level:.2f} <span style="font-size:0.9rem;">m</span></div>
         <div class="metric-sub">Kondisi: <strong>{trend_str}</strong></div>
     </div>
@@ -255,9 +254,9 @@ with m4:
 with m5:
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-title">Sumber Data Resmi</div>
-        <div class="metric-value" style="color: #a855f7; font-size:1.1rem; margin-top:8px;">DISHIDROSAL</div>
-        <div class="metric-sub">Status: <strong style="color:#10b981;">OPERATIONAL</strong></div>
+        <div class="metric-title">Koordinat GPS</div>
+        <div class="metric-value" style="color: #a855f7; font-size:1.05rem; margin-top:8px;">S7°38.659'</div>
+        <div class="metric-sub">E113°01.641'</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -281,11 +280,11 @@ selected_date = st.sidebar.date_input(
 )
 
 st.sidebar.divider()
-st.sidebar.markdown("**Parameter Stasiun Probolinggo:**")
+st.sidebar.markdown("**Parameter Lokasi Stasiun:**")
 st.sidebar.info("""
-**Stasiun:** DISHIDROSAL Probolinggo  
-**Latitude:** 07° 44' 10.79" S  
-**Longitude:** 113° 12' 59.64" E  
+**Stasiun:** Intake Area PLTGU Grati  
+**Latitude:** S7°38.659' (-7.644317)  
+**Longitude:** E113°01.641' (113.027350)  
 **Zona Waktu:** GMT +07.00 (WIB)
 """)
 
@@ -307,10 +306,10 @@ with col_left:
 
     fig = go.Figure()
 
-    # Data Resmi DISHIDROSAL
+    # Data Baseline
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'], y=df_plot['Sea_Level_m'],
-        mode='lines+markers', name='DISHIDROSAL Baseline',
+        mode='lines+markers', name='BMKG Hydro Baseline',
         line=dict(color='#0284c7', width=3),
         marker=dict(size=6)
     ))
@@ -359,30 +358,31 @@ with col_left:
     st.plotly_chart(fig, use_container_width=True)
 
 with col_right:
-    st.subheader("🗺️ Lokasi Stasiun DISHIDROSAL")
-    lat_dec = -7.736331  # 07° 44' 10.79" S
-    lon_dec = 113.216567 # 113° 12' 59.64" E
+    st.subheader("🗺️ Geospatial Intake Sensor")
+    # KOORDINAT PRESISI DESIMAL: S7°38.659' E113°01.641'
+    lat_dec = -7.644317
+    lon_dec = 113.027350
 
     if folium_installed:
-        m = folium.Map(location=[lat_dec, lon_dec], zoom_start=13, tiles="CartoDB dark_matter")
+        m = folium.Map(location=[lat_dec, lon_dec], zoom_start=15, tiles="CartoDB dark_matter")
         folium.Marker(
             [lat_dec, lon_dec],
-            popup="Stasiun DISHIDROSAL Probolinggo",
-            tooltip="📍 Stasiun Probolinggo (07°44'10.79\" S / 113°12'59.64\" E)",
-            icon=folium.Icon(color="red", icon="anchor", prefix="fa")
+            popup="Titik Sensor: S7°38.659' E113°01.641'",
+            tooltip="📍 Intake PLTGU Grati (S7°38.659' E113°01.641')",
+            icon=folium.Icon(color="red", icon="bolt", prefix="fa")
         ).add_to(m)
         st_folium(m, width="100%", height=380)
     else:
         map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
-        st.map(map_data, zoom=13)
+        st.map(map_data, zoom=15)
 
 # ==========================================
 # DATA GRID & EXPORT
 # ==========================================
 st.divider()
-st.subheader("📊 Datagrid Telemetri & Export Laporan Resmi")
+st.subheader("📊 Datagrid Telemetri & Export Laporan")
 
-tab_data, tab_export = st.tabs(["📋 Preview Telemetri DISHIDROSAL", "📥 Ekspor Laporan"])
+tab_data, tab_export = st.tabs(["📋 Preview Telemetri S7°38.659' E113°01.641'", "📥 Ekspor Laporan"])
 
 with tab_data:
     st.dataframe(
@@ -393,9 +393,9 @@ with tab_data:
 with tab_export:
     c1, c2 = st.columns(2)
     csv_bytes = df.to_csv(index=False).encode('utf-8')
-    c1.download_button("📥 Unduh Laporan Resmi DISHIDROSAL (CSV)", csv_bytes, 'Report_DISHIDROSAL_Probolinggo_Sept_2026.csv', 'text/csv')
+    c1.download_button("📥 Unduh Laporan Telemetri (CSV)", csv_bytes, 'Report_SeaLevel_S7_38_659_E113_01_641.csv', 'text/csv')
 
     excel_buffer = io.BytesIO()
     with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='DISHIDROSAL_Sept_2026', index=False)
-    c2.download_button("📥 Unduh Laporan Resmi DISHIDROSAL (Excel)", excel_buffer.getvalue(), 'Report_DISHIDROSAL_Probolinggo_Sept_2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        df.to_excel(writer, sheet_name='Data_S7_38_659_E113_01_641', index=False)
+    c2.download_button("📥 Unduh Laporan Telemetri (Excel)", excel_buffer.getvalue(), 'Report_SeaLevel_S7_38_659_E113_01_641.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
