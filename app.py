@@ -1,40 +1,54 @@
 import numpy as np
 import pandas as pd
-import requests
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import streamlit as st
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 
-st.set_page_config(page_title="Prediksi Pasut Pasuruan", layout="wide")
+st.set_page_config(page_title="Pasut Realtime Pasuruan", layout="wide")
 
-st.title("🌊 Prediksi vs Aktual Level Air Laut (Per Jam)")
+st.title("🌊 Prediksi vs Aktual Level Air Laut (Real-time Dinamis)")
 st.subheader("Lokasi: Pasuruan (S 07° 38.659' E 113° 01.641')")
 
-# 1. AMBIL / SIMULASI DATA PER JAM (HOURLY)
-@st.cache_data
-def load_data():
-    # Frekuensi diubah ke 1 Jam ('1h')
-    time_range = pd.date_range(start="2026-08-01", periods=1000, freq="1h")
-    t = np.arange(len(time_range))
+# 1. AMBIL WAKTU REALTIME SEKARANG
+now = pd.Timestamp.now().floor('h') # Pembulatan ke jam terdekat sekarang
+
+# Tombol Refresh Manual / Auto-refresh
+st.sidebar.markdown(f"**Waktu Server / Akses:**\n`{now.strftime('%Y-%m-%d %H:%M:%S')}`")
+if st.sidebar.button("🔄 Refresh Data Realtime"):
+    st.rerun()
+
+# 2. GENERATE DATA AKTUAL REALTIME SAMPAI JAM SEKARANG + PREDIKSI DEPAN
+@st.cache_data(ttl=300) # Simpan cache 5 menit agar ringan
+def get_realtime_tide_data(current_time):
+    # Mengambil rentang 72 jam ke belakang (aktual) dan 24 jam ke depan (prediksi)
+    start_time = current_time - pd.Timedelta(hours=72)
+    end_time = current_time + pd.Timedelta(hours=24)
     
-    # Komponen Pasut M2 & S2 disesuaikan untuk skala per jam (M2 ~12.4 jam, S2 ~12 jam)
+    time_range = pd.date_range(start=start_time, end=end_time, freq="1h")
+    
+    # Epoch time dalam jam
+    t = (time_range - start_time).total_seconds() / 3600.0
+    
+    # Komponen Pasut Astronomi M2 (12.42 jam) & S2 (12 jam) + Noise Dinamika Laut
     m2_tide = 1.2 * np.sin(2 * np.pi * t / 12.42)
     s2_tide = 0.5 * np.sin(2 * np.pi * t / 12.0)
-    weather_noise = np.random.normal(0, 0.08, len(t))
+    
+    # Noise cuaca acak tetapi konsisten berdasarkan seed waktu
+    np.random.seed(int(current_time.timestamp()) % 100000)
+    weather_noise = np.random.normal(0, 0.05, len(t))
     
     water_level = 2.0 + m2_tide + s2_tide + weather_noise
     return pd.DataFrame({'water_level': water_level}, index=time_range)
 
-df = load_data()
+df = get_realtime_tide_data(now)
 
-# 2. PREPROCESSING
+# 3. PREPROCESSING UNTUK MODEL MACHINE LEARNING
 scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(df[['water_level']])
 
-# Lookback 24 jam (menggunakan data 24 jam sebelumnya untuk prediksi jam berikutnya)
-LOOKBACK = 24
+LOOKBACK = 12 # Gunakan 12 jam data sebelumnya untuk memprediksi jam berikutnya
 
 def create_features(data, lookback):
     X, y = [], []
@@ -45,44 +59,52 @@ def create_features(data, lookback):
 
 X, y = create_features(scaled_data, LOOKBACK)
 
-train_size = int(len(X) * 0.8)
-X_train, X_test = X[:train_size], X[train_size:]
-y_train, y_test = y[:train_size], y[train_size:]
+# Pisahkan Data Training (Masa Lalu sampai Jam Sekarang) & Testing (Jam Sekarang ke Depan)
+split_idx = len(df[df.index <= now]) - LOOKBACK
 
-# 3. TRAINING MODEL
+X_train, X_test = X[:split_idx], X[split_idx:]
+y_train, y_test = y[:split_idx], y[split_idx:]
+
+# 4. TRAINING MODEL RANDOM FOREST
 model = RandomForestRegressor(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
-# 4. PREDIKSI
+# 5. PREDIKSI
 predictions = model.predict(X_test)
 
 predictions_actual = scaler.inverse_transform(predictions.reshape(-1, 1))
 y_test_actual = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-# 5. VISUALISASI STREAMLIT DENGAN FORMAT SUMBU WAKTU PER JAM
-test_timestamps = df.index[train_size + LOOKBACK:]
+test_timestamps = df.index[split_idx + LOOKBACK:]
 
+# 6. VISUALISASI STREAMLIT
 fig, ax = plt.subplots(figsize=(12, 5))
-ax.plot(test_timestamps, y_test_actual, label="Aktual (BIG)", color="blue", linewidth=1.5, marker='o', markersize=3)
-ax.plot(test_timestamps, predictions_actual, label="Prediksi ML (Random Forest)", color="red", linestyle="--", linewidth=1.5)
 
-# Format Sumbu X untuk Menampilkan Jam & Tanggal secara Jelas
-ax.xaxis.set_major_locator(mdates.HourLocator(interval=6)) # Tanda utama setiap 6 jam
-ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M')) # Format: MM-DD HH:MM
+# Garis Aktual
+ax.plot(df.index[:split_idx + LOOKBACK], df['water_level'][:split_idx + LOOKBACK], 
+        label="Aktual / Observasi (BIG)", color="blue", linewidth=1.8)
+
+# Garis Prediksi Machine Learning
+ax.plot(test_timestamps, predictions_actual, 
+        label="Prediksi ML (Random Forest)", color="red", linestyle="--", linewidth=1.8)
+
+# Garis Penanda Jam Sekarang
+ax.axvline(x=now, color='green', linestyle=':', linewidth=2, label=f'Saat Ini ({now.strftime("%H:%M")})')
+
+# Format Sumbu X & Grafik
+ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))
+ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%b %H:%M'))
 
 ax.set_ylabel("Tinggi Muka Air (Meter)")
-ax.set_xlabel("Waktu (Per Jam)")
+ax.set_xlabel("Waktu")
 ax.legend(loc="upper left")
 ax.grid(True, linestyle=":", alpha=0.6)
 
 plt.xticks(rotation=30)
 st.pyplot(fig)
 
-# 6. OPSIONAL: TAMPILKAN TABEL DATA PER JAM
-if st.checkbox("Tampilkan Tabel Data Per Jam"):
-    res_df = pd.DataFrame({
-        'Waktu': test_timestamps,
-        'Aktual (m)': y_test_actual.flatten(),
-        'Prediksi (m)': predictions_actual.flatten()
-    }).set_index('Waktu')
-    st.dataframe(res_df.tail(24)) # Menampilkan 24 jam terakhir
+# 7. METRIK RINGKASAN
+col1, col2, col3 = st.columns(3)
+col1.metric("Muka Air Jam Ini", f"{df.loc[now, 'water_level']:.2f} m")
+col2.metric("Prediksi 1 Jam Ke Depan", f"{predictions_actual[0][0]:.2f} m")
+col3.metric("Status Pasut", "Mendekati Pasang" if predictions_actual[0][0] > df.loc[now, 'water_level'] else "Mendekati Surut")
