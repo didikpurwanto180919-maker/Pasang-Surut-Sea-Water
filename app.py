@@ -42,10 +42,11 @@ st.set_page_config(
     layout="wide"
 )
 
+# Jalankan Auto-Refresh jika library tersedia
 if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
-# Header Aplikasi
+# Header Utama
 st.title("🌊 Prediksi & Real-Time Data Pasang Surut Air Laut Probolinggo")
 st.caption("📍 **Lokasi Koordinat Target:** S7°38.659' E113°01.641' (PLTGU Grati / Perairan Probolinggo)")
 
@@ -121,7 +122,7 @@ def generate_and_train():
 df = generate_and_train()
 bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
-# 3. REALTIME PANEL
+# 3. REALTIME PANEL (WIB & KOORDINAT)
 current_month = now.month
 current_day = now.day
 current_hour = now.hour
@@ -146,9 +147,7 @@ rc5.metric("Status Koneksi BMKG", f"🟢 {bmkg_msg}" if bmkg_status else "🔴 O
 
 st.divider()
 
-# ==========================================
 # 4. TAMPILAN PETA LOKASI REALTIME (OPENSTREETMAP / FOLIUM)
-# ==========================================
 st.subheader("🗺️ Tampilan Peta Lokasi Real-Time (S7°38.659' E113°01.641')")
 
 lat_decimal = -7.644317
@@ -167,7 +166,6 @@ with col_map1:
         ).add_to(m)
         st_folium(m, width="100%", height=350)
     else:
-        # Fallback Native Streamlit Map jika Folium belum terpasang
         map_data = pd.DataFrame({'lat': [lat_decimal], 'lon': [lon_decimal]})
         st.map(map_data, zoom=14)
 
@@ -181,9 +179,7 @@ with col_map2:
 
 st.divider()
 
-# ==========================================
 # 5. KONTROL SIDEBAR & GRAFIK VISUALISASI
-# ==========================================
 st.sidebar.header("⚙️ Kontrol Grafik")
 
 view_mode = st.sidebar.radio(
@@ -208,16 +204,35 @@ else:
     selected_hour_start = st.sidebar.slider("Pilih Jam Awal:", 0, 18, current_hour if current_hour <= 18 else 18)
     df_plot = df_daily[(df_daily['Hour'] >= selected_hour_start) & (df_daily['Hour'] <= selected_hour_start + 6)]
 
-fig, ax = plt.subplots(figsize=(12, 4.5))
+fig, ax = plt.subplots(figsize=(12, 5))
 
+# Plot Lines Utama
 ax.plot(df_plot['Timestamp'], df_plot['Sea_Level_m'], marker='o', label='Simulated / BMKG Baseline Level', color='#1f77b4', linewidth=2)
 ax.plot(df_plot['Timestamp'], df_plot['ML_Predicted_Sea_Level_m'], marker='x', label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1.5)
 ax.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
 
+# Penanda Garis & Nilai Angka Real-Time Sekarang
 if selected_date == datetime.date(2026, current_month, current_day):
     current_timestamp = pd.to_datetime(f"2026-{current_month:02d}-{current_day:02d} {current_hour:02d}:00:00")
+    
     if current_timestamp in df_plot['Timestamp'].values:
+        # 1. Garis Ungu Tegak (Waktu Sekarang)
         ax.axvline(x=current_timestamp, color='purple', linestyle='-', linewidth=2.5, label=f'Waktu Sekarang ({now.strftime("%H:%M WIB")})')
+        
+        # 2. Titik Merah Besar (Real-Time Dot)
+        ax.plot(current_timestamp, realtime_level, marker='o', markersize=10, color='red', markeredgecolor='black', label=f'Realtime: {realtime_level:.2f} m')
+        
+        # 3. Kotak Teks Angka Nilai Realtime di Atas Titik
+        ax.annotate(
+            f"  {realtime_level:.2f} m", 
+            xy=(current_timestamp, realtime_level),
+            xytext=(0, 15), 
+            textcoords='offset points',
+            fontsize=12,
+            fontweight='bold',
+            color='darkred',
+            bbox=dict(boxstyle="round,pad=0.3", fc="yellow", ec="red", lw=1.5)
+        )
 
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 ax.xaxis.set_major_locator(mdates.HourLocator(interval=1 if view_mode != "Mode Harian (24 Jam)" else 2))
@@ -230,9 +245,7 @@ plt.xticks(rotation=0)
 
 st.pyplot(fig)
 
-# ==========================================
 # 6. TABEL DATA & UNDUH FILE
-# ==========================================
 st.divider()
 st.subheader("📊 Tabel Data & Unduh File")
 
