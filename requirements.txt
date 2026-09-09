@@ -1,7 +1,5 @@
 streamlit
-numpy
 pandas
-requests
+numpy
 matplotlib
-scikit-learn
-pytz
+requests
