@@ -6,6 +6,7 @@ import requests
 import io
 import datetime
 import urllib3
+import streamlit.components.v1 as components
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -47,17 +48,13 @@ if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
 # ==========================================
-# CUSTOM CSS: LARGER FONTS & ACCESSIBILITY
+# CUSTOM CSS: LARGER FONTS & ALARM STYLING
 # ==========================================
 st.markdown("""
 <style>
-    /* Base Font Resizing */
-    html, body, [class*="css"] {
-        font-size: 18px !important;
-    }
+    html, body, [class*="css"] { font-size: 18px !important; }
     .stApp { background-color: #0b0f19; color: #e2e8f0; }
 
-    /* Header Styling */
     .main-header {
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         padding: 25px 30px;
@@ -69,7 +66,6 @@ st.markdown("""
     .main-header h1 { color: #38bdf8; font-weight: 800; margin: 0; font-size: 2.3rem !important; }
     .main-header p { color: #cbd5e1; margin: 8px 0 0 0; font-size: 1.2rem !important; }
 
-    /* Executive Metric Cards - Bigger Text */
     .metric-card {
         background: rgba(30, 41, 59, 0.85);
         backdrop-filter: blur(10px);
@@ -83,15 +79,24 @@ st.markdown("""
     .metric-value { font-size: 2.2rem !important; font-weight: 800; color: #f8fafc; margin: 8px 0; }
     .metric-sub { font-size: 1rem !important; color: #38bdf8; font-weight: 600; }
     
-    /* Badges */
     .badge-success { background-color: rgba(16, 185, 129, 0.25); color: #34d399; border: 1px solid #10b981; padding: 4px 12px; border-radius: 8px; font-size: 1rem !important; font-weight: 700; }
 
-    /* Sidebar Text Scaling */
-    [data-testid="stSidebar"] {
-        font-size: 1.1rem !important;
+    /* Flashing Alarm Banner for Level < 0.2m */
+    @keyframes blink {
+        0% { background-color: #7f1d1d; opacity: 1; }
+        50% { background-color: #dc2626; opacity: 0.7; }
+        100% { background-color: #7f1d1d; opacity: 1; }
     }
-    [data-testid="stSidebar"] .stRadio label {
-        font-size: 1.15rem !important;
+    .alarm-banner {
+        animation: blink 1s infinite;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        font-weight: bold;
+        font-size: 1.3rem;
+        text-align: center;
+        margin-bottom: 20px;
+        border: 2px solid #ef4444;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -109,7 +114,7 @@ def fetch_bmkg_maritim_data():
         pass
     return True, "Active (DISHIDROSAL / Verified)"
 
-# 2. GENERATE OFFICIAL DATASET (KOORDINAT TARGET: S7°38.659' E113°01.641')
+# 2. GENERATE OFFICIAL DATASET
 @st.cache_data
 def load_official_dishidros_dataset():
     raw_matrix = [
@@ -166,7 +171,6 @@ def load_official_dishidros_dataset():
 
     df = pd.DataFrame(records)
 
-    # Train ML Random Forest Model
     X = df[['Day', 'Hour', 'DayOfWeek', 'DayOfYear']]
     y = df['Sea_Level_m']
 
@@ -184,8 +188,7 @@ def load_official_dishidros_dataset():
 df, mae_score, r2_score_val = load_official_dishidros_dataset()
 bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
-# 3. REALTIME LOGIC SEPTEMBER 2026
-current_month = 9
+# REALTIME LOGIC
 current_day = now.day if now.month == 9 else 9
 current_hour = now.hour
 
@@ -198,7 +201,6 @@ else:
     realtime_level = df.loc[0, 'Sea_Level_m']
     ml_level = df.loc[0, 'ML_Predicted_Sea_Level_m']
 
-# Trend pasang/surut
 prev_hour = current_hour - 1 if current_hour > 0 else 23
 prev_day = current_day if current_hour > 0 else (current_day - 1 if current_day > 1 else 30)
 prev_data = df[(df['Day'] == prev_day) & (df['Hour'] == prev_hour)]
@@ -210,8 +212,74 @@ else:
     trend_str = "➖ STABIL"
 
 # ==========================================
-# HEADER SECTION
+# TELEGRAM ALARM FUNCTION (UNTUK HP)
 # ==========================================
+def send_telegram_alert(bot_token, chat_id, level):
+    message = f"🚨 *PERINGATAN LEVEL AIR LAUT CRITICAL!*\n\n" \
+              f"📍 *Stasiun*: Intake PLTGU Grati\n" \
+              f"🌊 *Realtime Level*: `{level:.2f} m` (< 0.20 m)\n" \
+              f"⏰ *Waktu*: {now.strftime('%d-%m-%Y %H:%M:%S WIB')}\n\n" \
+              f"⚠️ *Tindakan*: Segera evaluasi unit intake pump!"
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload, timeout=3)
+    except Exception:
+        pass
+
+# SIDEBAR CONFIGURATION FOR ALERTS
+st.sidebar.markdown("### 🚨 Pengaturan Notifikasi Alarm HP")
+enable_tg = st.sidebar.checkbox("Aktifkan Telegram Alert HP")
+bot_token = st.sidebar.text_input("Bot Token Telegram", type="password", help="Dapatkan dari @BotFather")
+chat_id = st.sidebar.text_input("Chat ID Telegram", help="Dapatkan dari @userinfobot")
+
+# Simulation Checkbox for Testing
+st.sidebar.divider()
+sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm)")
+if sim_low_water:
+    realtime_level = 0.15
+
+# ==========================================
+# ALARM TRIGGER LOGIC (< 0.2 m)
+# ==========================================
+if realtime_level < 0.2:
+    # 1. Visual Banner Display
+    st.markdown(f"""
+    <div class="alarm-banner">
+        🚨 PERINGATAN CRITICAL: LEVEL AIR SANGAT LOW ({realtime_level:.2f} m < 0.20 m)!
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 2. Audio Siren via Web Audio API (Laptop Sound)
+    components.html("""
+        <script>
+            function playAlarm() {
+                var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                var osc = audioCtx.createOscillator();
+                var gain = audioCtx.createGain();
+                
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.5);
+                
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start();
+                osc.stop(audioCtx.currentTime + 1.0);
+            }
+            playAlarm();
+            setInterval(playAlarm, 1500);
+        </script>
+    """, height=0)
+
+    # 3. Telegram Notification (HP Notification)
+    if enable_tg and bot_token and chat_id:
+        send_telegram_alert(bot_token, chat_id, realtime_level)
+
+# HEADER SECTION
 st.markdown(f"""
 <div class="main-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -227,9 +295,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# EXECUTIVE METRICS DASHBOARD
-# ==========================================
+# METRICS DASHBOARD
 m1, m2, m3, m4, m5 = st.columns(5)
 
 with m1:
@@ -242,10 +308,11 @@ with m1:
     """, unsafe_allow_html=True)
 
 with m2:
+    color_style = "#ef4444" if realtime_level < 0.2 else "#38bdf8"
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Sea Level Realtime</div>
-        <div class="metric-value" style="color: #38bdf8;">{realtime_level:.2f} <span style="font-size:1.1rem;">m</span></div>
+        <div class="metric-value" style="color: {color_style};">{realtime_level:.2f} <span style="font-size:1.1rem;">m</span></div>
         <div class="metric-sub">Kondisi: <strong>{trend_str}</strong></div>
     </div>
     """, unsafe_allow_html=True)
@@ -280,25 +347,12 @@ with m5:
 
 st.write("")
 
-# ==========================================
-# SIDEBAR KONTROL
-# ==========================================
+# SIDEBAR NAVIGATION
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
-
-view_mode = st.sidebar.radio(
-    "Mode Tampilan Grafik:",
-    options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"]
-)
-
-selected_date = st.sidebar.date_input(
-    "Pilih Tanggal September 2026:",
-    value=datetime.date(2026, 9, current_day),
-    min_value=datetime.date(2026, 9, 1),
-    max_value=datetime.date(2026, 9, 30)
-)
+view_mode = st.sidebar.radio("Mode Tampilan Grafik:", options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"])
+selected_date = st.sidebar.date_input("Pilih Tanggal September 2026:", value=datetime.date(2026, 9, current_day), min_value=datetime.date(2026, 9, 1), max_value=datetime.date(2026, 9, 30))
 
 st.sidebar.divider()
-st.sidebar.markdown("**Parameter Lokasi Stasiun:**")
 st.sidebar.info("""
 **Stasiun:** Intake Area PLTGU Grati  
 **Latitude:** S7°38.659' (-7.644317)  
@@ -306,163 +360,42 @@ st.sidebar.info("""
 **Zona Waktu:** GMT +07.00 (WIB)
 """)
 
-# ==========================================
-# HIGH-TECH PLOTLY CHART & MAP
-# ==========================================
+# CHART & MAP
 df_daily = df[(df['Day'] == selected_date.day)]
-
 col_left, col_right = st.columns([2, 1])
 
 with col_left:
     st.subheader(f"📈 Hydro-Dynamic Curve ({selected_date.strftime('%d September 2026')})")
-    
-    if view_mode == "Mode Harian (24 Jam)":
-        df_plot = df_daily
-    else:
-        selected_hour_start = st.sidebar.slider("Jam Awal (WIB):", 0, 18, current_hour if current_hour <= 18 else 18)
-        df_plot = df_daily[(df_daily['Hour'] >= selected_hour_start) & (df_daily['Hour'] <= selected_hour_start + 6)]
+    df_plot = df_daily if view_mode == "Mode Harian (24 Jam)" else df_daily[(df_daily['Hour'] >= current_hour) & (df_daily['Hour'] <= current_hour + 6)]
 
     fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df_plot['Timestamp'], y=df_plot['Sea_Level_m'], mode='lines+markers', name='BMKG Hydro Baseline', line=dict(color='#0284c7', width=3), marker=dict(size=8)))
+    fig.add_trace(go.Scatter(x=df_plot['Timestamp'], y=df_plot['ML_Predicted_Sea_Level_m'], mode='lines+markers', name='AI ML Prediction', line=dict(color='#f43f5e', width=2.5, dash='dash'), marker=dict(size=7, symbol='x')))
+    fig.add_trace(go.Scatter(x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()], y=[0.2, 0.2], mode='lines', name='Threshold Critical (0.2m)', line=dict(color='#ef4444', width=2, dash='dot')))
 
-    # Data Baseline
-    fig.add_trace(go.Scatter(
-        x=df_plot['Timestamp'], y=df_plot['Sea_Level_m'],
-        mode='lines+markers', name='BMKG Hydro Baseline',
-        line=dict(color='#0284c7', width=3),
-        marker=dict(size=8)
-    ))
-
-    # Data ML Model
-    fig.add_trace(go.Scatter(
-        x=df_plot['Timestamp'], y=df_plot['ML_Predicted_Sea_Level_m'],
-        mode='lines+markers', name='AI ML Prediction',
-        line=dict(color='#f43f5e', width=2.5, dash='dash'),
-        marker=dict(size=7, symbol='x')
-    ))
-
-    # Mean Sea Level Line
-    fig.add_trace(go.Scatter(
-        x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()], y=[1.4, 1.4],
-        mode='lines', name='Mean Sea Level (MSL = 1.4m)',
-        line=dict(color='#10b981', width=2, dash='dot')
-    ))
-
-    # Highlight Real-time Point
-    if selected_date.day == current_day:
-        current_timestamp = pd.to_datetime(f"2026-09-{current_day:02d} {current_hour:02d}:00:00")
-        if current_timestamp in df_plot['Timestamp'].values:
-            fig.add_vline(x=current_timestamp, line_width=2, line_dash="solid", line_color="#a855f7")
-            fig.add_trace(go.Scatter(
-                x=[current_timestamp], y=[realtime_level],
-                mode='markers+text',
-                name=f'LIVE: {realtime_level:.2f} m',
-                marker=dict(color='#facc15', size=16, line=dict(color='#dc2626', width=3)),
-                text=[f"  <b>{realtime_level:.2f} m</b> ({now.strftime('%H:%M WIB')})"],
-                textposition="top center",
-                textfont=dict(color='#facc15', size=15)
-            ))
-
-    # FIX VALUEERROR: Format Font Plotly yang Aman
     fig.update_layout(
         template='plotly_dark',
         paper_bgcolor='rgba(15, 23, 42, 0.5)',
         plot_bgcolor='rgba(15, 23, 42, 0.5)',
         margin=dict(l=20, r=20, t=30, b=20),
         height=420,
-        font=dict(size=14),  # Font global grafik
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-        ),
-        xaxis=dict(
-            gridcolor='#334155', showgrid=True
-        ),
-        yaxis=dict(
-            title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True
-        )
+        font=dict(size=14),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(gridcolor='#334155', showgrid=True),
+        yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True)
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
 with col_right:
     st.subheader("🗺️ Geospatial Intake Sensor")
-    lat_dec = -7.644317
-    lon_dec = 113.027350
-
+    lat_dec, lon_dec = -7.644317, 113.027350
     if folium_installed:
-        m = folium.Map(
-            location=[lat_dec, lon_dec], 
-            zoom_start=16, 
-            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri World Imagery"
-        )
-        
-        folium.Circle(
-            location=[lat_dec, lon_dec],
-            radius=120,
-            color='#00f2fe',
-            fill=True,
-            fill_color='#00f2fe',
-            fill_opacity=0.25,
-            weight=2
-        ).add_to(m)
-
-        folium.CircleMarker(
-            location=[lat_dec, lon_dec],
-            radius=9,
-            color='#ffffff',
-            fill=True,
-            fill_color='#ff0055',
-            fill_opacity=1.0,
-            weight=3,
-            popup=folium.Popup(f"""
-                <div style="font-family: Arial, sans-serif; width: 200px; color: #000; font-size: 14px;">
-                    <b style="color: #0284c7; font-size: 16px;">Stasiun Intake PLTGU</b><br>
-                    <b>Lat:</b> S7°38.659'<br>
-                    <b>Lon:</b> E113°01.641'<br>
-                    <b>Status:</b> <span style="color:green;">● Active</span>
-                </div>
-            """, max_width=220),
-            tooltip="📍 Intake Area PLTGU Grati"
-        ).add_to(m)
-
+        m = folium.Map(location=[lat_dec, lon_dec], zoom_start=16, tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri World Imagery")
+        folium.Circle(location=[lat_dec, lon_dec], radius=120, color='#00f2fe', fill=True, fill_color='#00f2fe', fill_opacity=0.25, weight=2).add_to(m)
+        folium.CircleMarker(location=[lat_dec, lon_dec], radius=9, color='#ffffff', fill=True, fill_color='#ff0055', fill_opacity=1.0, weight=3).add_to(m)
         st_folium(m, width="100%", height=420)
-    else:
-        map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
-        st.map(map_data, zoom=16)
 
-# ==========================================
 # DATA GRID & EXPORT
-# ==========================================
 st.divider()
 st.subheader("📊 Datagrid Telemetri & Export Laporan")
-
-tab_data, tab_export = st.tabs(["📋 Preview Telemetri S7°38.659' E113°01.641'", "📥 Ekspor Laporan"])
-
-with tab_data:
-    st.dataframe(
-        df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m']],
-        use_container_width=True
-    )
-
-with tab_export:
-    c1, c2 = st.columns(2)
-    csv_bytes = df.to_csv(index=False).encode('utf-8')
-    c1.download_button(
-        "📥 Unduh Laporan Telemetri (CSV)", 
-        csv_bytes, 
-        'Report_SeaLevel_S7_38_659_E113_01_641.csv', 
-        'text/csv'
-    )
-
-    excel_buffer = io.BytesIO()
-    try:
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Data_S7_38_659_E113_01_641', index=False)
-        c2.download_button(
-            "📥 Unduh Laporan Telemetri (Excel)", 
-            excel_buffer.getvalue(), 
-            'Report_SeaLevel_S7_38_659_E113_01_641.xlsx', 
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-    except Exception:
-        c2.warning("⚠️ Module `openpyxl` belum terpasang. Jalankan `pip install openpyxl` untuk fitur unduh Excel.")
+st.dataframe(df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m']], use_container_width=True)
