@@ -47,34 +47,52 @@ if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
 # ==========================================
-# CUSTOM CSS: EXECUTIVE INDUSTRIAL DARK THEME
+# CUSTOM CSS: LARGER FONTS & ACCESSIBILITY
 # ==========================================
 st.markdown("""
 <style>
+    /* Base Font Resizing */
+    html, body, [class*="css"] {
+        font-size: 18px !important;
+    }
     .stApp { background-color: #0b0f19; color: #e2e8f0; }
+
+    /* Header Styling */
     .main-header {
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        padding: 20px 25px;
-        border-radius: 12px;
+        padding: 25px 30px;
+        border-radius: 14px;
         border: 1px solid #334155;
         box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-        margin-bottom: 20px;
+        margin-bottom: 25px;
     }
-    .main-header h1 { color: #38bdf8; font-weight: 800; margin: 0; font-size: 1.8rem; }
-    .main-header p { color: #94a3b8; margin: 5px 0 0 0; font-size: 0.95rem; }
+    .main-header h1 { color: #38bdf8; font-weight: 800; margin: 0; font-size: 2.3rem !important; }
+    .main-header p { color: #cbd5e1; margin: 8px 0 0 0; font-size: 1.2rem !important; }
+
+    /* Executive Metric Cards - Bigger Text */
     .metric-card {
-        background: rgba(30, 41, 59, 0.7);
+        background: rgba(30, 41, 59, 0.85);
         backdrop-filter: blur(10px);
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 15px;
+        border: 1px solid #475569;
+        border-radius: 12px;
+        padding: 20px 15px;
         text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.3);
     }
-    .metric-title { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
-    .metric-value { font-size: 1.5rem; font-weight: 700; color: #f8fafc; margin: 5px 0; }
-    .metric-sub { font-size: 0.75rem; color: #38bdf8; }
-    .badge-success { background-color: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+    .metric-title { font-size: 1rem !important; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.8px; }
+    .metric-value { font-size: 2.2rem !important; font-weight: 800; color: #f8fafc; margin: 8px 0; }
+    .metric-sub { font-size: 1rem !important; color: #38bdf8; font-weight: 600; }
+    
+    /* Badges */
+    .badge-success { background-color: rgba(16, 185, 129, 0.25); color: #34d399; border: 1px solid #10b981; padding: 4px 12px; border-radius: 8px; font-size: 1rem !important; font-weight: 700; }
+
+    /* Sidebar Text Scaling */
+    [data-testid="stSidebar"] {
+        font-size: 1.1rem !important;
+    }
+    [data-testid="stSidebar"] .stRadio label {
+        font-size: 1.15rem !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -203,7 +221,7 @@ st.markdown(f"""
         </div>
         <div style="text-align: right;">
             <span class="badge-success">🟢 REALTIME ACTIVE</span><br>
-            <small style="color: #64748b; font-size: 0.75rem;">Sync: {now.strftime('%H:%M:%S WIB')} (Auto 60s)</small>
+            <small style="color: #94a3b8; font-size: 0.95rem;">Sync: {now.strftime('%H:%M:%S WIB')} (Auto 60s)</small>
         </div>
     </div>
 </div>
@@ -218,7 +236,7 @@ with m1:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Waktu Monitoring</div>
-        <div class="metric-value">{now.strftime('%H:%M')} <span style="font-size:0.9rem; color:#94a3b8;">WIB</span></div>
+        <div class="metric-value">{now.strftime('%H:%M')} <span style="font-size:1.1rem; color:#94a3b8;">WIB</span></div>
         <div class="metric-sub">{current_day} September 2026</div>
     </div>
     """, unsafe_allow_html=True)
@@ -227,7 +245,7 @@ with m2:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Sea Level Realtime</div>
-        <div class="metric-value" style="color: #38bdf8;">{realtime_level:.2f} <span style="font-size:0.9rem;">m</span></div>
+        <div class="metric-value" style="color: #38bdf8;">{realtime_level:.2f} <span style="font-size:1.1rem;">m</span></div>
         <div class="metric-sub">Kondisi: <strong>{trend_str}</strong></div>
     </div>
     """, unsafe_allow_html=True)
@@ -237,7 +255,7 @@ with m3:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Prediksi ML Model</div>
-        <div class="metric-value" style="color: #f43f5e;">{ml_level:.2f} <span style="font-size:0.9rem;">m</span></div>
+        <div class="metric-value" style="color: #f43f5e;">{ml_level:.2f} <span style="font-size:1.1rem;">m</span></div>
         <div class="metric-sub">Deviasi: <strong>{delta_val:+.2f} m</strong></div>
     </div>
     """, unsafe_allow_html=True)
@@ -255,7 +273,7 @@ with m5:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Koordinat GPS</div>
-        <div class="metric-value" style="color: #a855f7; font-size:1.05rem; margin-top:8px;">S7°38.659'</div>
+        <div class="metric-value" style="color: #a855f7; font-size:1.5rem; margin-top:8px;">S7°38.659'</div>
         <div class="metric-sub">E113°01.641'</div>
     </div>
     """, unsafe_allow_html=True)
@@ -311,22 +329,22 @@ with col_left:
         x=df_plot['Timestamp'], y=df_plot['Sea_Level_m'],
         mode='lines+markers', name='BMKG Hydro Baseline',
         line=dict(color='#0284c7', width=3),
-        marker=dict(size=6)
+        marker=dict(size=8)
     ))
 
     # Data ML Model
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'], y=df_plot['ML_Predicted_Sea_Level_m'],
         mode='lines+markers', name='AI ML Prediction',
-        line=dict(color='#f43f5e', width=2, dash='dash'),
-        marker=dict(size=5, symbol='x')
+        line=dict(color='#f43f5e', width=2.5, dash='dash'),
+        marker=dict(size=7, symbol='x')
     ))
 
     # Mean Sea Level Line
     fig.add_trace(go.Scatter(
         x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()], y=[1.4, 1.4],
         mode='lines', name='Mean Sea Level (MSL = 1.4m)',
-        line=dict(color='#10b981', width=1.5, dash='dot')
+        line=dict(color='#10b981', width=2, dash='dot')
     ))
 
     # Highlight Real-time Point
@@ -338,21 +356,31 @@ with col_left:
                 x=[current_timestamp], y=[realtime_level],
                 mode='markers+text',
                 name=f'LIVE: {realtime_level:.2f} m',
-                marker=dict(color='#facc15', size=14, line=dict(color='#dc2626', width=3)),
+                marker=dict(color='#facc15', size=16, line=dict(color='#dc2626', width=3)),
                 text=[f"  <b>{realtime_level:.2f} m</b> ({now.strftime('%H:%M WIB')})"],
                 textposition="top center",
-                textfont=dict(color='#facc15', size=13)
+                textfont=dict(color='#facc15', size=15)
             ))
 
+    # Font sizing untuk Grafik Plotly
     fig.update_layout(
         template='plotly_dark',
         paper_bgcolor='rgba(15, 23, 42, 0.5)',
         plot_bgcolor='rgba(15, 23, 42, 0.5)',
         margin=dict(l=20, r=20, t=30, b=20),
-        height=380,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        xaxis=dict(gridcolor='#334155', showgrid=True),
-        yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True)
+        height=420,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+            font=dict(size=14)
+        ),
+        xaxis=dict(
+            gridcolor='#334155', showgrid=True,
+            titlefont=dict(size=16), tickfont=dict(size=14)
+        ),
+        yaxis=dict(
+            title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True,
+            titlefont=dict(size=16), tickfont=dict(size=14)
+        )
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -363,7 +391,6 @@ with col_right:
     lon_dec = 113.027350
 
     if folium_installed:
-        # Basemap Satelit High-Definition Esri
         m = folium.Map(
             location=[lat_dec, lon_dec], 
             zoom_start=16, 
@@ -371,7 +398,6 @@ with col_right:
             attr="Esri World Imagery"
         )
         
-        # Area Lingkaran Radar Intake (Glow Effect)
         folium.Circle(
             location=[lat_dec, lon_dec],
             radius=120,
@@ -382,27 +408,26 @@ with col_right:
             weight=2
         ).add_to(m)
 
-        # Pin Marker Pusat Sensor
         folium.CircleMarker(
             location=[lat_dec, lon_dec],
-            radius=8,
+            radius=9,
             color='#ffffff',
             fill=True,
             fill_color='#ff0055',
             fill_opacity=1.0,
             weight=3,
             popup=folium.Popup(f"""
-                <div style="font-family: Arial, sans-serif; width: 180px; color: #000;">
-                    <b style="color: #0284c7;">Stasiun Intake PLTGU</b><br>
+                <div style="font-family: Arial, sans-serif; width: 200px; color: #000; font-size: 14px;">
+                    <b style="color: #0284c7; font-size: 16px;">Stasiun Intake PLTGU</b><br>
                     <b>Lat:</b> S7°38.659'<br>
                     <b>Lon:</b> E113°01.641'<br>
                     <b>Status:</b> <span style="color:green;">● Active</span>
                 </div>
-            """, max_width=200),
+            """, max_width=220),
             tooltip="📍 Intake Area PLTGU Grati"
         ).add_to(m)
 
-        st_folium(m, width="100%", height=380)
+        st_folium(m, width="100%", height=420)
     else:
         map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
         st.map(map_data, zoom=16)
