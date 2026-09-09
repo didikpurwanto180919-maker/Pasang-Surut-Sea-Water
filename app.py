@@ -362,24 +362,22 @@ with col_left:
                 textfont=dict(color='#facc15', size=15)
             ))
 
-    # Font sizing untuk Grafik Plotly
+    # FIX VALUEERROR: Format Font Plotly yang Aman
     fig.update_layout(
         template='plotly_dark',
         paper_bgcolor='rgba(15, 23, 42, 0.5)',
         plot_bgcolor='rgba(15, 23, 42, 0.5)',
         margin=dict(l=20, r=20, t=30, b=20),
         height=420,
+        font=dict(size=14),  # Font global grafik
         legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-            font=dict(size=14)
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
         ),
         xaxis=dict(
-            gridcolor='#334155', showgrid=True,
-            titlefont=dict(size=16), tickfont=dict(size=14)
+            gridcolor='#334155', showgrid=True
         ),
         yaxis=dict(
-            title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True,
-            titlefont=dict(size=16), tickfont=dict(size=14)
+            title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True
         )
     )
 
