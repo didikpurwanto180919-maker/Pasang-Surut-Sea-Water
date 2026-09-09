@@ -10,45 +10,48 @@ from sklearn.preprocessing import MinMaxScaler
 
 st.set_page_config(page_title="Pasut Realtime Pasuruan", layout="wide")
 
-st.title("🌊 Prediksi vs Aktual Level Air Laut (Real-time WIB)")
+st.title("🌊 Prediksi vs Aktual Level Air Laut (Real-time Presisi)")
 st.subheader("Lokasi: Pasuruan (S 07° 38.659' E 113° 01.641')")
 
-# 1. PAKSA WAKTU KE WIB (Asia/Jakarta)
+# 1. WAKTU LOKAL WIB PRESISI DETIK/MENIT (TANPA CACHE)
 wib_tz = pytz.timezone('Asia/Jakarta')
-now_wib = datetime.now(wib_tz)
-now_wib = pd.Timestamp(now_wib).floor('h').tz_localize(None) # Samakan format timestamp tanpa offset tz
+now_wib = datetime.now(wib_tz).replace(tzinfo=None)
 
-st.sidebar.markdown(f"**Waktu Lokal (WIB):**\n`{now_wib.strftime('%Y-%m-%d %H:%M:%S')}`")
+st.sidebar.markdown(f"**Waktu Server / Lokal (WIB):**\n`{now_wib.strftime('%Y-%m-%d %H:%M:%S')}`")
 if st.sidebar.button("🔄 Refresh Data Realtime"):
     st.rerun()
 
-# 2. GENERATE DATA PASUT BERDASARKAN JAM WIB
-@st.cache_data(ttl=300)
+# 2. GENERATE DATA TANPA CACHE (@st.cache_data DIHAPUS AGAR ALWAYS REALTIME)
 def get_realtime_tide_data(current_time):
     start_time = current_time - pd.Timedelta(hours=72)
     end_time = current_time + pd.Timedelta(hours=24)
     
-    time_range = pd.date_range(start=start_time, end=end_time, freq="1h")
+    # Grid data per 15 menit agar kurva halus dan presisi
+    time_range = pd.date_range(start=start_time, end=end_time, freq="15min")
     
-    # Hitung berbasis jam epoch
-    t = (time_range - start_time).total_seconds() / 3600.0
+    # Hitung waktu relatif dalam jam dari epoch 2026-01-01
+    epoch_ref = pd.Timestamp("2026-01-01")
+    t = (time_range - epoch_ref).total_seconds() / 3600.0
     
+    # Formula Harmonik Pasut Pasuruan (Komponen M2 & S2)
     m2_tide = 1.2 * np.sin(2 * np.pi * t / 12.42)
     s2_tide = 0.5 * np.sin(2 * np.pi * t / 12.0)
     
-    np.random.seed(int(current_time.timestamp()) % 100000)
-    weather_noise = np.random.normal(0, 0.05, len(t))
+    # Noise dinamika laut acak berbasis menit berjalan
+    seed_val = int(current_time.timestamp()) % 10000
+    np.random.seed(seed_val)
+    weather_noise = np.random.normal(0, 0.04, len(t))
     
     water_level = 2.0 + m2_tide + s2_tide + weather_noise
     return pd.DataFrame({'water_level': water_level}, index=time_range)
 
 df = get_realtime_tide_data(now_wib)
 
-# 3. PREPROCESSING
+# 3. PREPROCESSING UNTUK MODEL MACHINE LEARNING
 scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(df[['water_level']])
 
-LOOKBACK = 12
+LOOKBACK = 24 # 6 jam data histori (24 x 15 menit)
 
 def create_features(data, lookback):
     X, y = [], []
@@ -64,7 +67,7 @@ split_idx = len(df[df.index <= now_wib]) - LOOKBACK
 X_train, X_test = X[:split_idx], X[split_idx:]
 y_train, y_test = y[:split_idx], y[split_idx:]
 
-# 4. TRAINING MODEL
+# 4. TRAINING MODEL RANDOM FOREST
 model = RandomForestRegressor(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
@@ -72,23 +75,22 @@ model.fit(X_train, y_train)
 predictions = model.predict(X_test)
 
 predictions_actual = scaler.inverse_transform(predictions.reshape(-1, 1))
-y_test_actual = scaler.inverse_transform(y_test.reshape(-1, 1))
-
 test_timestamps = df.index[split_idx + LOOKBACK:]
 
-# 6. VISUALISASI
+# 6. VISUALISASI STREAMLIT
 fig, ax = plt.subplots(figsize=(12, 5))
 
-# Garis Aktual
+# Plot Data Observasi / Aktual
 ax.plot(df.index[:split_idx + LOOKBACK], df['water_level'][:split_idx + LOOKBACK], 
         label="Aktual / Observasi (BIG)", color="blue", linewidth=1.8)
 
-# Garis Prediksi Machine Learning
+# Plot Data Prediksi Machine Learning
 ax.plot(test_timestamps, predictions_actual, 
         label="Prediksi ML (Random Forest)", color="red", linestyle="--", linewidth=1.8)
 
-# Garis Penanda Jam Sekarang (WIB)
-ax.axvline(x=now_wib, color='green', linestyle=':', linewidth=2, label=f'Saat Ini ({now_wib.strftime("%H:%M WIB")})')
+# Garis Penanda Menit Sekarang secara Tepat
+ax.axvline(x=now_wib, color='green', linestyle=':', linewidth=2, 
+           label=f'Saat Ini ({now_wib.strftime("%H:%M:%S WIB")})')
 
 ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%b %H:%M'))
@@ -102,7 +104,10 @@ plt.xticks(rotation=30)
 st.pyplot(fig)
 
 # 7. METRIK RINGKASAN
+current_val = df.iloc[len(df[df.index <= now_wib])-1]['water_level']
+next_val = predictions_actual[0][0]
+
 col1, col2, col3 = st.columns(3)
-col1.metric("Muka Air Jam Ini", f"{df.loc[now_wib, 'water_level']:.2f} m")
-col2.metric("Prediksi 1 Jam Ke Depan", f"{predictions_actual[0][0]:.2f} m")
-col3.metric("Status Pasut", "Mendekati Pasang" if predictions_actual[0][0] > df.loc[now_wib, 'water_level'] else "Mendekati Surut")
+col1.metric("Muka Air Saat Ini", f"{current_val:.2f} m")
+col2.metric("Prediksi 15 Menit Ke Depan", f"{next_val:.2f} m")
+col3.metric("Trend Pasut", "Sedang Naik (Pasang)" if next_val > current_val else "Sedang Turun (Surut)")
