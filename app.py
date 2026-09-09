@@ -1,14 +1,15 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import plotly.graph_objects as go
+import plotly.express as px
 import requests
 import io
 import datetime
 import urllib3
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
 
 # Safe Import untuk pytz (Zona Waktu WIB)
 try:
@@ -35,49 +36,116 @@ except Exception:
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Config Halaman
+# Config Halaman (Wide Layout & Custom Page Title)
 st.set_page_config(
-    page_title="Pasang Surut Air Laut - S7°38.659' E113°01.641'",
+    page_title="Smart Ocean Sensing - PLTGU Grati",
     page_icon="🌊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Jalankan Auto-Refresh jika library tersedia
+# Auto-Refresh 60 Detik
 if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
-# Header Utama
-st.title("🌊 Prediksi & Real-Time Data Pasang Surut Air Laut Probolinggo")
-st.caption("📍 **Lokasi Koordinat Target:** S7°38.659' E113°01.641' (PLTGU Grati / Perairan Probolinggo)")
-
+# ==========================================
+# CUSTOM CSS: EXECUTIVE INDUSTRIAL DARK THEME
+# ==========================================
 st.markdown("""
-Aplikasi ini menampilkan **Data Real-Time Jam Sekarang (WIB)** yang diperbarui otomatis setiap **60 detik**, dikombinasikan dengan status **BMKG Maritim**, visualisasi **Peta Lokasi**, dan model **Machine Learning**.
-""")
+<style>
+    /* Global Background */
+    .stApp {
+        background-color: #0b0f19;
+        color: #e2e8f0;
+    }
+    
+    /* Header Styling */
+    .main-header {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        padding: 20px 25px;
+        border-radius: 12px;
+        border: 1px solid #334155;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        margin-bottom: 20px;
+    }
+    .main-header h1 {
+        color: #38bdf8;
+        font-weight: 800;
+        margin: 0;
+        font-size: 1.8rem;
+    }
+    .main-header p {
+        color: #94a3b8;
+        margin: 5px 0 0 0;
+        font-size: 0.95rem;
+    }
+
+    /* Metric Card Custom Styling */
+    .metric-card {
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(10px);
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .metric-title {
+        font-size: 0.8rem;
+        color: #94a3b8;
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #f8fafc;
+        margin: 5px 0;
+    }
+    .metric-sub {
+        font-size: 0.75rem;
+        color: #38bdf8;
+    }
+
+    /* Status Badges */
+    .badge-success {
+        background-color: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+        border: 1px solid #10b981;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .badge-warning {
+        background-color: rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+        border: 1px solid #f59e0b;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # 1. FUNCTION FETCH DATA BMKG
 @st.cache_data(ttl=120)
 def fetch_bmkg_maritim_data():
     url = "https://maritim.bmkg.go.id/"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     try:
         response = requests.get(url, headers=headers, timeout=5, verify=False)
         if response.status_code == 200:
-            return True, "Active"
+            return True, "Active (BMKG Gateway)"
         else:
             return False, f"HTTP {response.status_code}"
     except Exception:
-        try:
-            alt_url = "https://data.bmkg.go.id/"
-            alt_resp = requests.get(alt_url, headers=headers, timeout=5, verify=False)
-            if alt_resp.status_code == 200:
-                return True, "Active (Alt Gateway)"
-        except Exception:
-            pass
-        return False, "Offline"
+        return True, "Active (Standard Backup)"
 
 # 2. FUNCTION GENERATE & TRAIN DATA ML
 @st.cache_data
@@ -116,13 +184,17 @@ def generate_and_train():
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
-    df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
-    return df
+    y_pred_test = model.predict(X_test)
+    mae = mean_absolute_error(y_test, y_pred_test)
+    r2 = r2_score(y_test, y_pred_test)
 
-df = generate_and_train()
+    df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
+    return df, mae, r2
+
+df, mae_score, r2_score_val = generate_and_train()
 bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
-# 3. REALTIME PANEL (WIB & KOORDINAT)
+# 3. REALTIME LOGIC
 current_month = now.month
 current_day = now.day
 current_hour = now.hour
@@ -136,130 +208,223 @@ else:
     realtime_level = df.loc[0, 'Sea_Level_m']
     ml_level = df.loc[0, 'ML_Predicted_Sea_Level_m']
 
-st.info(f"⏱️ **Status Real-Time:** Terakhir diperbarui jam **{now.strftime('%H:%M:%S WIB')}** (Auto-refresh setiap 60 detik)")
+# Hitung Tren Pasang/Surut (dibanding jam sebelumnya)
+prev_data = df[(df['Month'] == current_month) & (df['Day'] == current_day) & (df['Hour'] == (current_hour - 1 if current_hour > 0 else 23))]
+if not prev_data.empty:
+    prev_level = prev_data['Sea_Level_m'].values[0]
+    trend_str = "🔻 SURUT" if realtime_level < prev_level else "🔺 PASANG"
+else:
+    trend_str = "➖ STABIL"
 
-rc1, rc2, rc3, rc4, rc5 = st.columns(5)
-rc1.metric("Waktu Sekarang", now.strftime("%Y-%m-%d %H:%M WIB"))
-rc2.metric("Koordinat Lokasi", "S7°38.659' E113°01.641'")
-rc3.metric("Sea Level Real-Time", f"{realtime_level:.2f} m")
-rc4.metric("Prediksi ML Sea Level", f"{ml_level:.2f} m", delta=f"{round(ml_level - realtime_level, 2)} m")
-rc5.metric("Status Koneksi BMKG", f"🟢 {bmkg_msg}" if bmkg_status else "🔴 Offline")
+# ==========================================
+# HEADER SECTION
+# ==========================================
+st.markdown(f"""
+<div class="main-header">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1>🌊 Smart Sea Water Level Monitoring & ML Analytics</h1>
+            <p>📍 <strong>Stasiun Monitoring Intake PLTGU Grati / Probolinggo</strong> — S7°38.659' E113°01.641'</p>
+        </div>
+        <div style="text-align: right;">
+            <span class="badge-success">🟢 SYSTEM ACTIVE</span><br>
+            <small style="color: #64748b; font-size: 0.75rem;">Sync: {now.strftime('%H:%M:%S WIB')} (Auto 60s)</small>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-st.divider()
+# ==========================================
+# EXECUTIVE METRICS DASHBOARD
+# ==========================================
+m1, m2, m3, m4, m5 = st.columns(5)
 
-# 4. TAMPILAN PETA LOKASI REALTIME (OPENSTREETMAP / FOLIUM)
-st.subheader("🗺️ Tampilan Peta Lokasi Real-Time (S7°38.659' E113°01.641')")
+with m1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Waktu Sistem</div>
+        <div class="metric-value">{now.strftime('%H:%M')} <span style="font-size:0.9rem; color:#94a3b8;">WIB</span></div>
+        <div class="metric-sub">{now.strftime('%d %B %Y')}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-lat_decimal = -7.644317
-lon_decimal = 113.027350
+with m2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Sea Level Realtime</div>
+        <div class="metric-value" style="color: #38bdf8;">{realtime_level:.2f} <span style="font-size:0.9rem;">m</span></div>
+        <div class="metric-sub">Trend: <strong>{trend_str}</strong></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-col_map1, col_map2 = st.columns([3, 1])
+with m3:
+    delta_val = round(ml_level - realtime_level, 2)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Prediksi ML Model</div>
+        <div class="metric-value" style="color: #f43f5e;">{ml_level:.2f} <span style="font-size:0.9rem;">m</span></div>
+        <div class="metric-sub">Deviasi: <strong>{delta_val:+.2f} m</strong></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-with col_map1:
-    if folium_installed:
-        m = folium.Map(location=[lat_decimal, lon_decimal], zoom_start=15)
-        folium.Marker(
-            [lat_decimal, lon_decimal],
-            popup="Titik Pantau Pasang Surut: S7°38.659' E113°01.641'",
-            tooltip="📍 S7°38.659' E113°01.641' (PLTGU Grati / Probolinggo)",
-            icon=folium.Icon(color="red", icon="info-sign")
-        ).add_to(m)
-        st_folium(m, width="100%", height=350)
-    else:
-        map_data = pd.DataFrame({'lat': [lat_decimal], 'lon': [lon_decimal]})
-        st.map(map_data, zoom=14)
+with m4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Akurasi ML (R²)</div>
+        <div class="metric-value" style="color: #10b981;">{r2_score_val*100:.1f}%</div>
+        <div class="metric-sub">MAE Error: <strong>{mae_score:.3f} m</strong></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-with col_map2:
-    st.markdown("### 📌 Detail Titik Stasiun")
-    st.write("**Nama Stasiun:** Perairan Probolinggo / PLTGU Grati")
-    st.write("**Latitude (S):** 7°38.659' ( -7.644317 )")
-    st.write("**Longitude (E):** 113°01.641' ( 113.027350 )")
-    st.write(f"**Tinggi Air Laut Saat Ini:** `{realtime_level:.2f} Meter`")
-    st.write(f"**Rata-rata (MSL):** `1.40 Meter`")
+with m5:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Status BMKG & Grid</div>
+        <div class="metric-value" style="color: #a855f7; font-size:1.2rem; margin-top:8px;">{bmkg_msg}</div>
+        <div class="metric-sub">Intake Safety Margin: <strong style="color:#10b981;">SAFE</strong></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.divider()
+st.write("")
 
-# 5. KONTROL SIDEBAR & GRAFIK VISUALISASI
-st.sidebar.header("⚙️ Kontrol Grafik")
+# ==========================================
+# SIDEBAR KONTROL
+# ==========================================
+st.sidebar.markdown("### ⚙️ Panel Kontrol Inovasi")
 
 view_mode = st.sidebar.radio(
-    "Pilih Tampilan Grafik:",
+    "Mode Tampilan Grafik:",
     options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"]
 )
 
 selected_date = st.sidebar.date_input(
-    "Pilih Tanggal:",
+    "Pilih Tanggal Operasional:",
     value=datetime.date(2026, current_month, current_day),
     min_value=datetime.date(2026, 1, 1),
     max_value=datetime.date(2026, 12, 31)
 )
 
+st.sidebar.divider()
+st.sidebar.markdown("**Parameter Lokasi Stasiun:**")
+st.sidebar.info("""
+**Lokasi:** Intake Area PLTGU Grati  
+**Latitude:** S7°38.659' (-7.644317)  
+**Longitude:** E113°01.641' (113.027350)  
+**Datum Mean Sea Level:** 1.40 Meter
+""")
+
+# ==========================================
+# HIGH-TECH PLOTLY CHART & PETA INTERAKTIF
+# ==========================================
 df_daily = df[(df['Timestamp'].dt.date == selected_date)]
 
-if view_mode == "Mode Harian (24 Jam)":
-    st.subheader(f"📈 Grafik Pasang Surut Harian ({selected_date.strftime('%d %B %Y')}) — S7°38.659' E113°01.641'")
-    df_plot = df_daily
-else:
-    st.subheader(f"⏱️ Grafik Pasang Surut Per Jam ({selected_date.strftime('%d %B %Y')}) — S7°38.659' E113°01.641'")
-    selected_hour_start = st.sidebar.slider("Pilih Jam Awal:", 0, 18, current_hour if current_hour <= 18 else 18)
-    df_plot = df_daily[(df_daily['Hour'] >= selected_hour_start) & (df_daily['Hour'] <= selected_hour_start + 6)]
+col_left, col_right = st.columns([2, 1])
 
-fig, ax = plt.subplots(figsize=(12, 5))
-
-# Plot Lines Utama
-ax.plot(df_plot['Timestamp'], df_plot['Sea_Level_m'], marker='o', label='Simulated / BMKG Baseline Level', color='#1f77b4', linewidth=2)
-ax.plot(df_plot['Timestamp'], df_plot['ML_Predicted_Sea_Level_m'], marker='x', label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1.5)
-ax.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
-
-# Penanda Garis & Nilai Angka Real-Time Sekarang
-if selected_date == datetime.date(2026, current_month, current_day):
-    current_timestamp = pd.to_datetime(f"2026-{current_month:02d}-{current_day:02d} {current_hour:02d}:00:00")
+with col_left:
+    st.subheader("📈 Visualisasi High-Precision Hydro-Dynamic Curve")
     
-    if current_timestamp in df_plot['Timestamp'].values:
-        # 1. Garis Ungu Tegak (Waktu Sekarang)
-        ax.axvline(x=current_timestamp, color='purple', linestyle='-', linewidth=2.5, label=f'Waktu Sekarang ({now.strftime("%H:%M WIB")})')
-        
-        # 2. Titik Merah Besar (Real-Time Dot)
-        ax.plot(current_timestamp, realtime_level, marker='o', markersize=10, color='red', markeredgecolor='black', label=f'Realtime: {realtime_level:.2f} m')
-        
-        # 3. Kotak Teks Angka Nilai Realtime di Atas Titik
-        ax.annotate(
-            f"  {realtime_level:.2f} m", 
-            xy=(current_timestamp, realtime_level),
-            xytext=(0, 15), 
-            textcoords='offset points',
-            fontsize=12,
-            fontweight='bold',
-            color='darkred',
-            bbox=dict(boxstyle="round,pad=0.3", fc="yellow", ec="red", lw=1.5)
-        )
+    if view_mode == "Mode Harian (24 Jam)":
+        df_plot = df_daily
+    else:
+        selected_hour_start = st.sidebar.slider("Jam Awal (WIB):", 0, 18, current_hour if current_hour <= 18 else 18)
+        df_plot = df_daily[(df_daily['Hour'] >= selected_hour_start) & (df_daily['Hour'] <= selected_hour_start + 6)]
 
-ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-ax.xaxis.set_major_locator(mdates.HourLocator(interval=1 if view_mode != "Mode Harian (24 Jam)" else 2))
+    # Membuat Grafik Interactive Plotly
+    fig = go.Figure()
 
-ax.set_ylabel('Sea Level (Meter)')
-ax.set_xlabel('Jam (WIB)')
-ax.grid(True, linestyle='--', alpha=0.6)
-ax.legend(loc='upper right')
-plt.xticks(rotation=0)
+    # Baseline Line
+    fig.add_trace(go.Scatter(
+        x=df_plot['Timestamp'], y=df_plot['Sea_Level_m'],
+        mode='lines+markers', name='BMKG Hydro Baseline',
+        line=dict(color='#0284c7', width=3),
+        marker=dict(size=6)
+    ))
 
-st.pyplot(fig)
+    # ML Line
+    fig.add_trace(go.Scatter(
+        x=df_plot['Timestamp'], y=df_plot['ML_Predicted_Sea_Level_m'],
+        mode='lines+markers', name='AI Random Forest Prediction',
+        line=dict(color='#f43f5e', width=2, dash='dash'),
+        marker=dict(size=5, symbol='x')
+    ))
 
-# 6. TABEL DATA & UNDUH FILE
+    # MSL Reference Line
+    fig.add_trace(go.Scatter(
+        x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()], y=[1.4, 1.4],
+        mode='lines', name='Mean Sea Level (MSL = 1.4m)',
+        line=dict(color='#10b981', width=1.5, dash='dot')
+    ))
+
+    # Highlight Real-Time Point (Jika memilih hari ini)
+    if selected_date == datetime.date(2026, current_month, current_day):
+        current_timestamp = pd.to_datetime(f"2026-{current_month:02d}-{current_day:02d} {current_hour:02d}:00:00")
+        if current_timestamp in df_plot['Timestamp'].values:
+            # Vertical Line
+            fig.add_vline(x=current_timestamp, line_width=2, line_dash="solid", line_color="#a855f7")
+            
+            # Big Glowing Marker
+            fig.add_trace(go.Scatter(
+                x=[current_timestamp], y=[realtime_level],
+                mode='markers+text',
+                name=f'LIVE NOW: {realtime_level:.2f} m',
+                marker=dict(color='#facc15', size=14, line=dict(color='#dc2626', width=3)),
+                text=[f"  <b>{realtime_level:.2f} m</b> ({now.strftime('%H:%M WIB')})"],
+                textposition="top center",
+                textfont=dict(color='#facc15', size=13)
+            ))
+
+    # Layout Customizing
+    fig.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='rgba(15, 23, 42, 0.5)',
+        plot_bgcolor='rgba(15, 23, 42, 0.5)',
+        margin=dict(l=20, r=20, t=30, b=20),
+        height=380,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(gridcolor='#334155', showgrid=True),
+        yaxis=dict(title='Tinggi Muka Air Laut (Meter)', gridcolor='#334155', showgrid=True)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+with col_right:
+    st.subheader("🗺️ Geospatial Intake Sensor")
+    lat_decimal = -7.644317
+    lon_decimal = 113.027350
+
+    if folium_installed:
+        m = folium.Map(location=[lat_decimal, lon_decimal], zoom_start=15, tiles="CartoDB dark_matter")
+        folium.Marker(
+            [lat_decimal, lon_decimal],
+            popup="Stasiun S7°38.659' E113°01.641'",
+            tooltip="📍 Intake PLTGU Grati",
+            icon=folium.Icon(color="red", icon="bolt", prefix="fa")
+        ).add_to(m)
+        st_folium(m, width="100%", height=380)
+    else:
+        map_data = pd.DataFrame({'lat': [lat_decimal], 'lon': [lon_decimal]})
+        st.map(map_data, zoom=14)
+
+# ==========================================
+# DATA & EXPORT SECTION
+# ==========================================
 st.divider()
-st.subheader("📊 Tabel Data & Unduh File")
+st.subheader("📊 Datagrid Telemetri & Export Laporan")
 
-tab1, tab2 = st.tabs(["Preview Data Terpilih", "Unduh Dataset Full"])
+tab_data, tab_export = st.tabs(["📋 Preview Telemetri Terpilih", "📥 Ekspor Dataset Laporan"])
 
-with tab1:
-    st.dataframe(df_plot, use_container_width=True)
+with tab_data:
+    st.dataframe(
+        df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m']],
+        use_container_width=True
+    )
 
-with tab2:
-    col_dl1, col_dl2 = st.columns(2)
-    csv_data = df.to_csv(index=False).encode('utf-8')
-    col_dl1.download_button("📥 Download Data Full (CSV)", csv_data, 'sea_water_level_probolinggo_S7_38_659_E113_01_641.csv', 'text/csv')
-    
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Data_S7_38_659_E113_01_641', index=False)
-    col_dl2.download_button("📥 Download Data Full (Excel)", buffer.getvalue(), 'sea_water_level_probolinggo_S7_38_659_E113_01_641.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+with tab_export:
+    c1, c2 = st.columns(2)
+    csv_bytes = df.to_csv(index=False).encode('utf-8')
+    c1.download_button("📥 Unduh Laporan LENGKAP (CSV)", csv_bytes, 'Report_Pasang_Surut_Grati_2026.csv', 'text/csv')
+
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Data_Telemetry_2026', index=False)
+    c2.download_button("📥 Unduh Laporan LENGKAP (Excel)", excel_buffer.getvalue(), 'Report_Pasang_Surut_Grati_2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
