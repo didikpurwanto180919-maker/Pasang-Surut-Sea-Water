@@ -87,10 +87,45 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# LOAD DATASET & OPTIMIZED MACHINE LEARNING
+# LOAD DATASET GRATI & PROBOLINGGO
 @st.cache_data
 def load_official_dishidros_dataset():
-    raw_matrix = [
+    # Dataset Baseline Grati
+    raw_matrix_grati = [
+        [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.9, 1.0, 1.2, 1.6, 1.9, 2.1, 2.2, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 1.0, 1.3, 1.7, 2.1, 2.3],
+        [2.5, 2.4, 2.2, 1.8, 1.5, 1.1, 0.9, 0.9, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.1, 1.3, 1.6, 1.9, 2.2],
+        [2.4, 2.5, 2.4, 2.1, 1.8, 1.4, 1.1, 1.0, 0.9, 1.0, 1.2, 1.4, 1.6, 1.7, 1.7, 1.6, 1.5, 1.4, 1.3, 1.3, 1.4, 1.6, 1.8, 2.1],
+        [2.3, 2.4, 2.4, 2.3, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 0.9, 1.0, 1.2, 1.3, 1.4, 1.5, 1.5, 1.5, 1.5, 1.5, 1.6, 1.6, 1.8, 1.9],
+        [2.1, 2.2, 2.3, 2.3, 2.3, 2.1, 1.9, 1.6, 1.3, 1.1, 0.9, 0.8, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.7, 1.7, 1.7, 1.8, 1.8, 1.8],
+        [1.9, 2.0, 2.1, 2.2, 2.3, 2.3, 2.2, 2.0, 1.7, 1.4, 1.1, 0.8, 0.6, 0.7, 0.9, 1.1, 1.4, 1.7, 1.9, 1.9, 1.9, 1.9, 1.9, 1.8],
+        [1.8, 1.8, 1.9, 2.0, 2.2, 2.3, 2.4, 2.4, 2.1, 1.8, 1.4, 1.0, 0.6, 0.4, 0.5, 0.8, 1.2, 1.6, 1.9, 2.1, 2.1, 2.0, 1.9, 1.8],
+        [1.7, 1.6, 1.6, 1.7, 1.9, 2.2, 2.4, 2.6, 2.5, 2.2, 1.8, 1.3, 0.8, 0.5, 0.2, 0.2, 0.5, 0.9, 1.4, 1.8, 2.2, 2.3, 2.2, 2.0],
+        [1.8, 1.5, 1.4, 1.4, 1.6, 1.9, 2.3, 2.6, 2.7, 2.6, 2.3, 1.8, 1.2, 0.7, 0.3, 0.1, 0.2, 0.6, 1.1, 1.6, 2.1, 2.4, 2.4, 2.2],
+        [1.9, 1.6, 1.3, 1.2, 1.3, 1.5, 1.9, 2.4, 2.7, 2.8, 2.6, 2.2, 1.6, 1.0, 0.5, 0.2, 0.2, 0.4, 0.8, 1.4, 1.9, 2.3, 2.5, 2.4],
+        [2.1, 1.7, 1.3, 1.1, 1.0, 1.2, 1.6, 2.0, 2.5, 2.7, 2.7, 2.5, 2.0, 1.4, 0.9, 0.4, 0.3, 0.3, 0.7, 1.2, 1.7, 2.2, 2.5, 2.5],
+        [2.2, 1.9, 1.4, 1.1, 0.9, 0.9, 1.2, 1.6, 2.1, 2.5, 2.7, 2.6, 2.3, 1.8, 1.3, 0.8, 0.5, 0.4, 0.6, 1.0, 1.5, 2.1, 2.4, 2.5],
+        [2.4, 2.0, 1.6, 1.2, 0.9, 0.8, 0.9, 1.3, 1.7, 2.1, 2.5, 2.6, 2.4, 2.1, 1.6, 1.1, 0.8, 0.6, 0.7, 1.0, 1.4, 1.9, 2.3, 2.5],
+        [2.4, 2.2, 1.8, 1.4, 1.0, 0.8, 0.8, 1.0, 1.3, 1.7, 2.1, 2.3, 2.3, 2.1, 1.8, 1.4, 1.1, 0.9, 0.9, 1.1, 1.4, 1.8, 2.1, 2.4],
+        [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.8, 0.9, 1.1, 1.4, 1.7, 2.0, 2.1, 2.0, 1.9, 1.6, 1.4, 1.2, 1.2, 1.3, 1.5, 1.8, 2.1, 2.3],
+        [2.4, 2.3, 2.1, 1.8, 1.4, 1.1, 0.9, 0.9, 1.0, 1.1, 1.4, 1.6, 1.7, 1.8, 1.8, 1.7, 1.5, 1.4, 1.4, 1.5, 1.6, 1.8, 2.0, 2.2],
+        [2.3, 2.3, 2.1, 1.9, 1.6, 1.3, 1.1, 1.0, 1.0, 1.0, 1.1, 1.3, 1.4, 1.5, 1.5, 1.6, 1.6, 1.6, 1.6, 1.7, 1.8, 1.9, 2.1, 2.2],
+        [2.2, 2.2, 2.1, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.0, 1.0, 1.1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2],
+        [2.2, 2.2, 2.1, 2.0, 1.9, 1.8, 1.6, 1.4, 1.3, 1.1, 1.0, 1.0, 0.9, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 1.9, 2.0, 2.1, 2.1, 2.2],
+        [2.1, 2.1, 2.0, 2.0, 1.9, 1.8, 1.7, 1.5, 1.3, 1.1, 1.0, 0.8, 0.7, 0.8, 0.9, 1.1, 1.4, 1.6, 1.9, 2.0, 2.1, 2.2, 2.1, 2.0],
+        [2.1, 2.0, 2.0, 1.9, 2.0, 2.0, 2.0, 1.9, 1.8, 1.6, 1.3, 1.1, 0.8, 0.7, 0.6, 0.7, 0.9, 1.2, 1.5, 1.8, 2.0, 2.1, 2.1, 2.1],
+        [2.0, 1.9, 1.8, 1.8, 1.9, 2.0, 2.1, 2.1, 2.0, 1.8, 1.5, 1.2, 0.9, 0.7, 0.6, 0.6, 0.8, 1.1, 1.4, 1.8, 2.0, 2.1, 2.1, 2.0],
+        [1.9, 1.8, 1.7, 1.7, 1.8, 1.9, 2.1, 2.2, 2.2, 2.1, 1.8, 1.4, 1.1, 0.8, 0.6, 0.5, 0.7, 1.0, 1.4, 1.7, 2.0, 2.1, 2.1, 2.0],
+        [1.8, 1.6, 1.5, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.3, 2.1, 1.7, 1.3, 0.9, 0.7, 0.5, 0.6, 0.9, 1.3, 1.7, 2.0, 2.2, 2.2, 2.0],
+        [1.8, 1.5, 1.3, 1.2, 1.3, 1.5, 1.8, 2.2, 2.4, 2.4, 2.3, 1.9, 1.5, 1.1, 0.8, 0.6, 0.6, 0.9, 1.2, 1.7, 2.1, 2.3, 2.3, 2.1],
+        [1.8, 1.5, 1.2, 1.0, 1.0, 1.2, 1.6, 1.9, 2.3, 2.5, 2.4, 2.2, 1.8, 1.3, 0.9, 0.7, 0.7, 0.8, 1.2, 1.6, 2.1, 2.4, 2.5, 2.3],
+        [2.0, 1.5, 1.2, 0.9, 0.8, 0.9, 1.2, 1.6, 2.0, 2.4, 2.5, 2.3, 2.0, 1.6, 1.1, 0.9, 0.7, 0.9, 1.2, 1.6, 2.0, 2.4, 2.6, 2.5],
+        [2.2, 1.7, 1.3, 0.9, 0.7, 0.7, 0.9, 1.3, 1.7, 2.1, 2.3, 2.3, 2.1, 1.8, 1.4, 1.0, 0.9, 0.9, 1.1, 1.5, 2.0, 2.4, 2.6, 2.6],
+        [2.4, 2.0, 1.5, 1.0, 0.7, 0.6, 0.6, 0.9, 1.3, 1.8, 2.1, 2.2, 2.2, 1.9, 1.6, 1.3, 1.1, 1.0, 1.2, 1.5, 1.9, 2.3, 2.6, 2.7],
+        [2.6, 2.3, 1.8, 1.3, 0.9, 0.6, 0.5, 0.7, 1.0, 1.4, 1.7, 2.0, 2.0, 2.0, 1.7, 1.5, 1.3, 1.2, 1.2, 1.4, 1.8, 2.2, 2.5, 2.7]
+    ]
+
+    # Dataset Stasiun 39. PROBOLINGGO (Dari Tabel Buku Dishidros September 2026)
+    raw_matrix_probolinggo = [
         [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.9, 1.0, 1.2, 1.6, 1.9, 2.1, 2.2, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 1.0, 1.3, 1.7, 2.1, 2.3],
         [2.5, 2.4, 2.2, 1.8, 1.5, 1.1, 0.9, 0.9, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.1, 1.3, 1.6, 1.9, 2.2],
         [2.4, 2.5, 2.4, 2.1, 1.8, 1.4, 1.1, 1.0, 0.9, 1.0, 1.2, 1.4, 1.6, 1.7, 1.7, 1.6, 1.5, 1.4, 1.3, 1.3, 1.4, 1.6, 1.8, 2.1],
@@ -127,7 +162,8 @@ def load_official_dishidros_dataset():
     for day_idx in range(30):
         day_num = day_idx + 1
         for hour_idx in range(24):
-            val = raw_matrix[day_idx][hour_idx]
+            val_grati = raw_matrix_grati[day_idx][hour_idx]
+            val_prob = raw_matrix_probolinggo[day_idx][hour_idx]
             dt = datetime.datetime(2026, 9, day_num, hour_idx, 0, 0)
             records.append({
                 'Timestamp': dt,
@@ -138,12 +174,13 @@ def load_official_dishidros_dataset():
                 'Hour': hour_idx,
                 'DayOfWeek': dt.weekday(),
                 'DayOfYear': dt.timetuple().tm_yday,
-                'Sea_Level_m': val
+                'Sea_Level_m': val_grati,
+                'Probolinggo_Level_m': val_prob
             })
 
     df = pd.DataFrame(records)
 
-    # Feature Engineering (Lag Feature untuk Akurasi Tinggi & Presisi Rapat)
+    # Feature Engineering (Lag Feature untuk ML)
     df['Sea_Level_Lag1'] = df['Sea_Level_m'].shift(1).bfill()
     df['Sin_Hour'] = np.sin(2 * np.pi * df['Hour'] / 24)
     df['Cos_Hour'] = np.cos(2 * np.pi * df['Hour'] / 24)
@@ -175,10 +212,12 @@ current_data = df[(df['Day'] == current_day) & (df['Hour'] == current_hour)]
 if not current_data.empty:
     realtime_level = current_data['Sea_Level_m'].values[0]
     ml_level = current_data['ML_Predicted_Sea_Level_m'].values[0]
+    probolinggo_level = current_data['Probolinggo_Level_m'].values[0]
     realtime_timestamp = current_data['Timestamp'].values[0]
 else:
     realtime_level = df.loc[0, 'Sea_Level_m']
     ml_level = df.loc[0, 'ML_Predicted_Sea_Level_m']
+    probolinggo_level = df.loc[0, 'Probolinggo_Level_m']
     realtime_timestamp = df.loc[0, 'Timestamp']
 
 if sim_low_water:
@@ -306,12 +345,12 @@ with col_left:
 
     fig = go.Figure()
 
-    # 1. BMKG Baseline
+    # 1. BMKG Baseline (PLTGU Grati)
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'],
         y=df_plot['Sea_Level_m'],
         mode='lines+markers+text',
-        name='BMKG Baseline',
+        name='BMKG Baseline (Grati)',
         text=[f"{v:.2f}" for v in df_plot['Sea_Level_m']],
         textposition='top center',
         textfont=dict(color='#ffeb3b', size=11),
@@ -332,7 +371,17 @@ with col_left:
         marker=dict(size=5, symbol='x', color='#00e5ff')
     ))
 
-    # 3. Realtime Point
+    # 3. Dishidros Stasiun 39. PROBOLINGGO (07°44'10.79"S / 113°12'59.64"E)
+    fig.add_trace(go.Scatter(
+        x=df_plot['Timestamp'],
+        y=df_plot['Probolinggo_Level_m'],
+        mode='lines+markers',
+        name='39. PROBOLINGGO (07°44\'10.79"S / 113°12\'59.64"E)',
+        line=dict(color='#e086ff', width=2, dash='dot'),
+        marker=dict(size=6, color='#e086ff', symbol='circle-open')
+    ))
+
+    # 4. Realtime Point
     if selected_date.day == current_day:
         fig.add_trace(go.Scatter(
             x=[realtime_timestamp],
@@ -345,7 +394,7 @@ with col_left:
             marker=dict(size=14, color='#ff3d00', symbol='diamond', line=dict(color='#ffffff', width=2))
         ))
 
-    # 4. Critical Threshold
+    # 5. Critical Threshold
     fig.add_trace(go.Scatter(
         x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()],
         y=[0.2, 0.2],
@@ -354,13 +403,13 @@ with col_left:
         line=dict(color='#ff1744', width=2, dash='dot')
     ))
 
-    # TAMPILAN KONTRASTING DENGAN FONT LEGEND PUTIH TERANG
+    # UPDATE LAYOUT DENGAN LEGEND CERAH BERWARNA PUTIH
     fig.update_layout(
         template='plotly_dark',
         paper_bgcolor='rgba(15, 23, 42, 0.5)',
         plot_bgcolor='rgba(15, 23, 42, 0.5)',
         margin=dict(l=20, r=20, t=30, b=20),
-        height=450,
+        height=480,
         font=dict(size=13, color="#ffffff"),
         legend=dict(
             orientation="h",
@@ -368,7 +417,7 @@ with col_left:
             y=1.02,
             xanchor="right",
             x=1,
-            font=dict(size=13, color="#ffffff")
+            font=dict(size=12, color="#ffffff")
         ),
         xaxis=dict(gridcolor='#334155', showgrid=True),
         yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True, range=[-0.1, 3.1])
@@ -376,11 +425,15 @@ with col_left:
     st.plotly_chart(fig, use_container_width=True)
 
 with col_right:
-    st.subheader("🗺️ Geospatial Intake Sensor")
-    lat_dec, lon_dec = -7.644317, 113.027350
-    map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
-    st.map(map_data, zoom=14)
+    st.subheader("🗺️ Geospatial Sensor Comparison")
+    # Peta Menampilkan 2 Lokasi (Grati & Probolinggo)
+    map_data = pd.DataFrame({
+        'lat': [-7.644317, -7.736331],
+        'lon': [113.027350, 113.216567],
+        'location': ['PLTGU Grati', 'Stasiun 39. Probolinggo']
+    })
+    st.map(map_data, zoom=10)
 
 st.divider()
 st.subheader("📊 Datagrid Telemetri & Export Laporan")
-st.dataframe(df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m']], use_container_width=True)
+st.dataframe(df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m', 'Probolinggo_Level_m']], use_container_width=True)
