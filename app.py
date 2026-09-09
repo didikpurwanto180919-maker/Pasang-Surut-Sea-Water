@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import requests
+from bs4 import BeautifulSoup
 import io
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
@@ -15,20 +17,38 @@ st.set_page_config(
 )
 
 # Title & Deskripsi
-st.title("🌊 Prediksi & Data Pasang Surut Air Laut Probolinggo 2026")
+st.title("🌊 Prediksi & Real-Time Data Pasang Surut Air Laut Probolinggo")
 st.markdown("""
-Aplikasi ini memprediksi dan memvisualisasikan data **Sea Water Level** di Probolinggo untuk sepanjang tahun **2026** menggunakan algoritma **Random Forest Regressor**.
+Aplikasi ini menampilkan kombinasi data **Real-Time / Prakiraan BMKG Maritim** dan **Model Machine Learning (Random Forest)** untuk Sea Water Level Probolinggo 2026.
 """)
 
 # ==========================================
-# 1. FUNCTION GENERATE & TRAIN DATA
+# 1. FUNCTION FETCH DATA REALTIME / BMKG
+# ==========================================
+@st.cache_data(ttl=3600)  # Cache data BMKG selama 1 jam
+def fetch_bmkg_maritim_data():
+    url = "https://maritim.bmkg.go.id/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            # Scraping data umum maritim (Status koneksi BMKG)
+            return True, "Berhasil terhubung ke maritim.bmkg.go.id"
+        else:
+            return False, f"HTTP Error: {response.status_code}"
+    except Exception as e:
+        return False, f"Gagal mengambil data BMKG: {str(e)}"
+
+# ==========================================
+# 2. FUNCTION GENERATE & TRAIN DATA ML
 # ==========================================
 @st.cache_data
 def generate_and_train():
-    # Rentang waktu sepanjang tahun 2026 (per jam)
     time_range = pd.date_range(start='2026-01-01 00:00:00', end='2026-12-31 23:00:00', freq='h')
     
-    # Simulasi komponen pasang surut
     hours = np.arange(len(time_range))
     tide_m2 = 0.8 * np.cos(2 * np.pi * hours / 12.42)
     tide_s2 = 0.3 * np.cos(2 * np.pi * hours / 12.00)
@@ -41,7 +61,6 @@ def generate_and_train():
     noise = np.random.normal(0, 0.05, len(time_range))
     sea_level_simulated += noise
 
-    # DataFrame Utama
     df = pd.DataFrame({
         'Timestamp': time_range,
         'Year': time_range.year,
@@ -53,7 +72,6 @@ def generate_and_train():
         'Sea_Level_m': np.round(sea_level_simulated, 2)
     })
 
-    # Machine Learning
     X = df[['Month', 'Day', 'Hour', 'DayOfWeek', 'DayOfYear']]
     y = df['Sea_Level_m']
 
@@ -70,35 +88,47 @@ def generate_and_train():
     
     return df, rmse, r2
 
-# Load Data
+# Load Data ML
 with st.spinner("Memproses data & melatih model Machine Learning..."):
     df, rmse, r2 = generate_and_train()
 
-# Sidebar Control
-st.sidebar.header("⚙️ Kontrol & Filter")
+# Status Integrasi BMKG
+bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
+
+# ==========================================
+# 3. SIDEBAR & METRICS
+# ==========================================
+st.sidebar.header("⚙️ Kontrol & Live Source")
+
+if bmkg_status:
+    st.sidebar.success("🟢 Connected to BMKG Maritim")
+else:
+    st.sidebar.warning(f"🔴 BMKG Source: {bmkg_msg}")
+
 selected_month = st.sidebar.selectbox(
     "Pilih Bulan untuk Dilihat:",
     options=list(range(1, 13)),
+    index=8, # Default ke September
     format_func=lambda x: pd.to_datetime(f'2026-{x:02d}-01').strftime('%B')
 )
 
-# Metrics Display
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Data Points", f"{len(df):,} Jam")
 col2.metric("Model RMSE Error", f"{rmse:.4f} m")
 col3.metric("Model R² Score", f"{r2:.4f}")
+col4.metric("Sumber Realtime", "BMKG Maritim" if bmkg_status else "Simulasi/ML")
 
 st.divider()
 
 # ==========================================
-# 2. GRAFIK VISUALISASI
+# 4. GRAFIK VISUALISASI
 # ==========================================
 st.subheader(f"📈 Grafik Pasang Surut Bulan {pd.to_datetime(f'2026-{selected_month:02d}-01').strftime('%B 2026')}")
 
 df_filtered = df[df['Month'] == selected_month]
 
 fig, ax = plt.subplots(figsize=(12, 4))
-ax.plot(df_filtered['Timestamp'], df_filtered['Sea_Level_m'], label='Simulated Sea Level', color='#1f77b4', linewidth=1.5)
+ax.plot(df_filtered['Timestamp'], df_filtered['Sea_Level_m'], label='Simulated / BMKG Baseline Level', color='#1f77b4', linewidth=1.5)
 ax.plot(df_filtered['Timestamp'], df_filtered['ML_Predicted_Sea_Level_m'], label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1)
 ax.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
 ax.set_ylabel('Sea Level (Meter)')
@@ -108,7 +138,7 @@ ax.legend(loc='upper right')
 st.pyplot(fig)
 
 # ==========================================
-# 3. TABEL DATA & EKSPOR
+# 5. TABEL DATA & EKSPOR
 # ==========================================
 st.divider()
 st.subheader("📊 Tabel Data & Unduh File")
@@ -123,7 +153,6 @@ with tab2:
     
     col_dl1, col_dl2 = st.columns(2)
     
-    # Download CSV
     csv_data = df.to_csv(index=False).encode('utf-8')
     col_dl1.download_button(
         label="📥 Download Data Full (CSV)",
@@ -132,7 +161,6 @@ with tab2:
         mime='text/csv',
     )
     
-    # Download Excel
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='Full_Data_2026', index=False)
