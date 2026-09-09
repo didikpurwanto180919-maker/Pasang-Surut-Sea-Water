@@ -143,7 +143,7 @@ def load_official_dishidros_dataset():
 
     df = pd.DataFrame(records)
 
-    # Feature Engineering (Lag Feature untuk Akurasi Tinggi)
+    # Feature Engineering (Lag Feature untuk Akurasi Tinggi & Presisi Rapat)
     df['Sea_Level_Lag1'] = df['Sea_Level_m'].shift(1).bfill()
     df['Sin_Hour'] = np.sin(2 * np.pi * df['Hour'] / 24)
     df['Cos_Hour'] = np.cos(2 * np.pi * df['Hour'] / 24)
@@ -319,7 +319,7 @@ with col_left:
         marker=dict(size=7, color='#ffeb3b')
     ))
 
-    # 2. AI ML Prediction (Presisi Rapat)
+    # 2. AI ML Prediction
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'],
         y=df_plot['ML_Predicted_Sea_Level_m'],
@@ -354,14 +354,22 @@ with col_left:
         line=dict(color='#ff1744', width=2, dash='dot')
     ))
 
+    # TAMPILAN KONTRASTING DENGAN FONT LEGEND PUTIH TERANG
     fig.update_layout(
         template='plotly_dark',
         paper_bgcolor='rgba(15, 23, 42, 0.5)',
         plot_bgcolor='rgba(15, 23, 42, 0.5)',
         margin=dict(l=20, r=20, t=30, b=20),
         height=450,
-        font=dict(size=13),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        font=dict(size=13, color="#ffffff"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=13, color="#ffffff")
+        ),
         xaxis=dict(gridcolor='#334155', showgrid=True),
         yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True, range=[-0.1, 3.1])
     )
