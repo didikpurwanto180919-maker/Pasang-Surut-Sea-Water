@@ -1,123 +1,151 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import io
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 
-# ==========================================
-# 1. MEMBUAT DATASET PASANG SURUT 2026
-# ==========================================
-print("1. Menggenerate data pasang surut 2026...")
+# Config halaman Streamlit
+st.set_page_config(
+    page_title="Pasang Surut Sea Water Level Probolinggo 2026",
+    page_icon="🌊",
+    layout="wide"
+)
 
-# Rentang waktu sepanjang tahun 2026 (per jam)
-time_range = pd.date_range(start='2026-01-01 00:00:00', end='2026-12-31 23:00:00', freq='h')
-
-# Simulasi komponen pasang surut (Komponen Utama M2, S2, K1, O1)
-# Menggunakan formula gelombang sinusoidal pasang surut diurnal/semidiurnal
-hours = np.arange(len(time_range))
-tide_m2 = 0.8 * np.cos(2 * np.pi * hours / 12.42)          # Semidiurnal utama
-tide_s2 = 0.3 * np.cos(2 * np.pi * hours / 12.00)          # Semidiurnal matahari
-tide_k1 = 0.9 * np.cos(2 * np.pi * hours / 23.93 + 0.5)    # Diurnal utama
-tide_o1 = 0.5 * np.cos(2 * np.pi * hours / 25.82 - 0.3)    # Diurnal bulan
-
-# Mean Sea Level (MSL) rata-rata Probolinggo (~1.4 m)
-msl = 1.4
-
-# Menghitung Sea Water Level dasar
-sea_level_simulated = msl + tide_m2 + tide_s2 + tide_k1 + tide_o1
-
-# Menambahkan noise acak kecil (variasi cuaca/angin)
-np.random.seed(42)
-noise = np.random.normal(0, 0.05, len(time_range))
-sea_level_simulated += noise
-
-# Membuat DataFrame
-df = pd.DataFrame({
-    'Timestamp': time_range,
-    'Year': time_range.year,
-    'Month': time_range.month,
-    'Day': time_range.day,
-    'Hour': time_range.hour,
-    'DayOfWeek': time_range.dayofweek,
-    'DayOfYear': time_range.dayofyear,
-    'Sea_Level_m': np.round(sea_level_simulated, 2)
-})
+# Title & Deskripsi
+st.title("🌊 Prediksi & Data Pasang Surut Air Laut Probolinggo 2026")
+st.markdown("""
+Aplikasi ini memprediksi dan memvisualisasikan data **Sea Water Level** di Probolinggo untuk sepanjang tahun **2026** menggunakan algoritma **Random Forest Regressor**.
+""")
 
 # ==========================================
-# 2. PELATIHAN MODEL MACHINE LEARNING
+# 1. FUNCTION GENERATE & TRAIN DATA
 # ==========================================
-print("2. Melatih model Machine Learning (Random Forest)...")
-
-# Memisahkan Fitur (X) dan Target (y)
-X = df[['Month', 'Day', 'Hour', 'DayOfWeek', 'DayOfYear']]
-y = df['Sea_Level_m']
-
-# Split data latih (80%) dan data uji (20%)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Inisialisasi dan pelatihan model
-model = RandomForestRegressor(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
-
-# Prediksi pada data uji untuk evaluasi
-y_pred = model.predict(X_test)
-rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-r2 = r2_score(y_test, y_pred)
-
-print(f"   - Evaluation RMSE : {rmse:.4f} m")
-print(f"   - Evaluation R2   : {r2:.4f}")
-
-# Memasukkan hasil prediksi model ke dalam DataFrame utama
-df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
-
-# ==========================================
-# 3. EKSPOR KE CSV & EXCEL
-# ==========================================
-print("3. Mengekspor data ke format CSV dan Excel...")
-
-# Ekspor ke CSV
-csv_filename = 'sea_water_level_probolinggo_2026.csv'
-df.to_csv(csv_filename, index=False)
-print(f"   - File CSV berhasil dibuat: {csv_filename}")
-
-# Ekspor ke Excel
-excel_filename = 'sea_water_level_probolinggo_2026.xlsx'
-with pd.ExcelWriter(excel_filename, engine='openpyxl') as writer:
-    df.to_excel(writer, sheet_name='Full_Data_2026', index=False)
+@st.cache_data
+def generate_and_train():
+    # Rentang waktu sepanjang tahun 2026 (per jam)
+    time_range = pd.date_range(start='2026-01-01 00:00:00', end='2026-12-31 23:00:00', freq='h')
     
-    # Membuat sheet ringkasan bulanan (Min, Max, Rata-rata)
-    monthly_summary = df.groupby('Month')['Sea_Level_m'].agg(
-        Max_High_Tide_m='max',
-        Min_Low_Tide_m='min',
-        Average_Level_m='mean'
-    ).reset_index()
-    monthly_summary.to_excel(writer, sheet_name='Monthly_Summary', index=False)
+    # Simulasi komponen pasang surut
+    hours = np.arange(len(time_range))
+    tide_m2 = 0.8 * np.cos(2 * np.pi * hours / 12.42)
+    tide_s2 = 0.3 * np.cos(2 * np.pi * hours / 12.00)
+    tide_k1 = 0.9 * np.cos(2 * np.pi * hours / 23.93 + 0.5)
+    tide_o1 = 0.5 * np.cos(2 * np.pi * hours / 25.82 - 0.3)
+    msl = 1.4
 
-print(f"   - File Excel berhasil dibuat: {excel_filename}")
+    sea_level_simulated = msl + tide_m2 + tide_s2 + tide_k1 + tide_o1
+    np.random.seed(42)
+    noise = np.random.normal(0, 0.05, len(time_range))
+    sea_level_simulated += noise
+
+    # DataFrame Utama
+    df = pd.DataFrame({
+        'Timestamp': time_range,
+        'Year': time_range.year,
+        'Month': time_range.month,
+        'Day': time_range.day,
+        'Hour': time_range.hour,
+        'DayOfWeek': time_range.dayofweek,
+        'DayOfYear': time_range.dayofyear,
+        'Sea_Level_m': np.round(sea_level_simulated, 2)
+    })
+
+    # Machine Learning
+    X = df[['Month', 'Day', 'Hour', 'DayOfWeek', 'DayOfYear']]
+    y = df['Sea_Level_m']
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    r2 = r2_score(y_test, y_pred)
+
+    df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
+    
+    return df, rmse, r2
+
+# Load Data
+with st.spinner("Memproses data & melatih model Machine Learning..."):
+    df, rmse, r2 = generate_and_train()
+
+# Sidebar Control
+st.sidebar.header("⚙️ Kontrol & Filter")
+selected_month = st.sidebar.selectbox(
+    "Pilih Bulan untuk Dilihat:",
+    options=list(range(1, 13)),
+    format_func=lambda x: pd.to_datetime(f'2026-{x:02d}-01').strftime('%B')
+)
+
+# Metrics Display
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Data Points", f"{len(df):,} Jam")
+col2.metric("Model RMSE Error", f"{rmse:.4f} m")
+col3.metric("Model R² Score", f"{r2:.4f}")
+
+st.divider()
 
 # ==========================================
-# 4. VISUALISASI GRAFIK
+# 2. GRAFIK VISUALISASI
 # ==========================================
-print("4. Menampilkan grafik pasang surut...")
+st.subheader(f"📈 Grafik Pasang Surut Bulan {pd.to_datetime(f'2026-{selected_month:02d}-01').strftime('%B 2026')}")
 
-plt.figure(figsize=(15, 6))
+df_filtered = df[df['Month'] == selected_month]
 
-# Plot sampel data bulan Januari 2026 agar grafik terlihat detail
-df_january = df[df['Month'] == 1]
+fig, ax = plt.subplots(figsize=(12, 4))
+ax.plot(df_filtered['Timestamp'], df_filtered['Sea_Level_m'], label='Simulated Sea Level', color='#1f77b4', linewidth=1.5)
+ax.plot(df_filtered['Timestamp'], df_filtered['ML_Predicted_Sea_Level_m'], label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1)
+ax.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
+ax.set_ylabel('Sea Level (Meter)')
+ax.set_xlabel('Tanggal')
+ax.grid(True, linestyle='--', alpha=0.5)
+ax.legend(loc='upper right')
+st.pyplot(fig)
 
-plt.plot(df_january['Timestamp'], df_january['Sea_Level_m'], label='Simulated Sea Level', color='navy', alpha=0.7, linewidth=1.5)
-plt.plot(df_january['Timestamp'], df_january['ML_Predicted_Sea_Level_m'], label='ML Predicted Sea Level', color='red', linestyle='--', alpha=0.8, linewidth=1)
+# ==========================================
+# 3. TABEL DATA & EKSPOR
+# ==========================================
+st.divider()
+st.subheader("📊 Tabel Data & Unduh File")
 
-plt.title('Prediksi Sea Water Level Probolinggo - Bulan Januari 2026', fontsize=14, fontweight='bold')
-plt.xlabel('Tanggal / Waktu', fontsize=12)
-plt.ylabel('Sea Level (Meter)', fontsize=12)
-plt.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
-plt.grid(True, linestyle='--', alpha=0.5)
-plt.legend(loc='upper right')
-plt.tight_layout()
+tab1, tab2 = st.tabs(["Preview Data", "Unduh Dataset"])
 
-# Tampilkan grafik
-plt.show()
+with tab1:
+    st.dataframe(df_filtered, use_container_width=True)
 
-print("Proses selesai!")
+with tab2:
+    st.write("Silakan unduh dataset lengkap sepanjang tahun 2026:")
+    
+    col_dl1, col_dl2 = st.columns(2)
+    
+    # Download CSV
+    csv_data = df.to_csv(index=False).encode('utf-8')
+    col_dl1.download_button(
+        label="📥 Download Data Full (CSV)",
+        data=csv_data,
+        file_name='sea_water_level_probolinggo_2026.csv',
+        mime='text/csv',
+    )
+    
+    # Download Excel
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Full_Data_2026', index=False)
+        monthly_summary = df.groupby('Month')['Sea_Level_m'].agg(
+            Max_High_Tide_m='max',
+            Min_Low_Tide_m='min',
+            Average_Level_m='mean'
+        ).reset_index()
+        monthly_summary.to_excel(writer, sheet_name='Monthly_Summary', index=False)
+    
+    col_dl2.download_button(
+        label="📥 Download Data Full (Excel)",
+        data=buffer.getvalue(),
+        file_name='sea_water_level_probolinggo_2026.xlsx',
+        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
