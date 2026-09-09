@@ -1,161 +1,230 @@
-import streamlit as st
+import datetime
+import io
+import urllib3
+import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from datetime import datetime, timedelta
-import pytz
+import plotly.graph_objects as go
+import streamlit as st
+import streamlit.components.v1 as components
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split
 
-# Page Configuration
-st.set_page_config(
-    page_title="Monitoring Pasut Realtime - GPS S07°38.659' E113°01.641'",
-    page_icon="🌊",
-    layout="wide"
-)
+# Safe Import pytz untuk Zona Waktu WIB
+try:
+    import pytz
+    wib_tz = pytz.timezone('Asia/Jakarta')
+    now = datetime.datetime.now(wib_tz)
+except Exception:
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
 
-# Timezone Setup
-wib_tz = pytz.timezone('Asia/Jakarta')
-now_time = datetime.now(wib_tz).replace(tzinfo=None)
-
-# Auto-refresh every 60 seconds
+# Safe Import Auto-Refresh
 try:
     from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=60000, key="pasut_autorefresh_gps")
-except ImportError:
-    pass
+    st_autorefresh_installed = True
+except Exception:
+    st_autorefresh_installed = False
 
-st.title("🌊 Sistem Monitoring Pasang Surut Realtime")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-st.markdown("""
-> 📍 **Lokasi Pemantau (GPS):** `S 07° 38.659' E 113° 01.641'`  
-> 🗺️ **Wilayah:** Pesisir Selat Madura (Pasuruan - Probolinggo)  
-> 📊 **Acuan Datum:** Chart Datum Low Water Level (LWL) - Standard Dishidros TNI-AL / BMKG  
-""")
+# Konfigurasi Halaman Streamlit
+st.set_page_config(
+    page_title="Smart Hydro Monitoring - S7°38.659' E113°01.641'",
+    page_icon="🌊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# -------------------------------------------------------------------
-# DATA MATRIKS PASUT TERVALIDASI DARI TABEL DISHIDROS
-# -------------------------------------------------------------------
-tide_matrix_dishidros = {
-    8:  [1.7, 1.6, 1.6, 1.7, 1.9, 2.2, 2.4, 2.6, 2.5, 2.2, 1.8, 1.3, 0.8, 0.5, 0.2, 0.2, 0.5, 0.9, 1.4, 1.8, 2.2, 2.3, 2.2, 2.0],
-    9:  [1.8, 1.5, 1.4, 1.4, 1.6, 1.9, 2.3, 2.6, 2.7, 2.6, 2.3, 1.8, 1.2, 0.7, 0.3, 0.1, 0.2, 0.6, 1.1, 1.6, 2.1, 2.4, 2.4, 2.2],
-    10: [1.9, 1.6, 1.3, 1.2, 1.3, 1.5, 1.9, 2.4, 2.7, 2.8, 2.6, 2.2, 1.6, 1.0, 0.5, 0.2, 0.2, 0.4, 0.8, 1.4, 1.9, 2.3, 2.5, 2.4]
-}
+# Auto Refresh Halaman Setiap 60 Detik
+if st_autorefresh_installed:
+    st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
+
+# Load Dataset Resmi Hydro-Oceanography & Training ML Model
 @st.cache_data
-def build_base_dataframe():
-    times = []
-    elevations = []
+def load_official_dishidros_dataset():
+    raw_matrix = [
+        [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.9, 1.0, 1.2, 1.6, 1.9, 2.1, 2.2, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 1.0, 1.3, 1.7, 2.1, 2.3],
+        [2.5, 2.4, 2.2, 1.8, 1.5, 1.1, 0.9, 0.9, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.1, 1.3, 1.6, 1.9, 2.2],
+        [2.4, 2.5, 2.4, 2.1, 1.8, 1.4, 1.1, 1.0, 0.9, 1.0, 1.2, 1.4, 1.6, 1.7, 1.7, 1.6, 1.5, 1.4, 1.3, 1.3, 1.4, 1.6, 1.8, 2.1],
+        [2.3, 2.4, 2.4, 2.3, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 0.9, 1.0, 1.2, 1.3, 1.4, 1.5, 1.5, 1.5, 1.5, 1.5, 1.6, 1.6, 1.8, 1.9],
+        [2.1, 2.2, 2.3, 2.3, 2.3, 2.1, 1.9, 1.6, 1.3, 1.1, 0.9, 0.8, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.7, 1.7, 1.7, 1.8, 1.8, 1.8],
+        [1.9, 2.0, 2.1, 2.2, 2.3, 2.3, 2.2, 2.0, 1.7, 1.4, 1.1, 0.8, 0.6, 0.7, 0.9, 1.1, 1.4, 1.7, 1.9, 1.9, 1.9, 1.9, 1.9, 1.8],
+        [1.8, 1.8, 1.9, 2.0, 2.2, 2.3, 2.4, 2.4, 2.1, 1.8, 1.4, 1.0, 0.6, 0.4, 0.5, 0.8, 1.2, 1.6, 1.9, 2.1, 2.1, 2.0, 1.9, 1.8],
+        [1.7, 1.6, 1.6, 1.7, 1.9, 2.2, 2.4, 2.6, 2.5, 2.2, 1.8, 1.3, 0.8, 0.5, 0.2, 0.2, 0.5, 0.9, 1.4, 1.8, 2.2, 2.3, 2.2, 2.0],
+        [1.8, 1.5, 1.4, 1.4, 1.6, 1.9, 2.3, 2.6, 2.7, 2.6, 2.3, 1.8, 1.2, 0.7, 0.3, 0.1, 0.2, 0.6, 1.1, 1.6, 2.1, 2.4, 2.4, 2.2],
+        [1.9, 1.6, 1.3, 1.2, 1.3, 1.5, 1.9, 2.4, 2.7, 2.8, 2.6, 2.2, 1.6, 1.0, 0.5, 0.2, 0.2, 0.4, 0.8, 1.4, 1.9, 2.3, 2.5, 2.4],
+        [2.1, 1.7, 1.3, 1.1, 1.0, 1.2, 1.6, 2.0, 2.5, 2.7, 2.7, 2.5, 2.0, 1.4, 0.9, 0.4, 0.3, 0.3, 0.7, 1.2, 1.7, 2.2, 2.5, 2.5],
+        [2.2, 1.9, 1.4, 1.1, 0.9, 0.9, 1.2, 1.6, 2.1, 2.5, 2.7, 2.6, 2.3, 1.8, 1.3, 0.8, 0.5, 0.4, 0.6, 1.0, 1.5, 2.1, 2.4, 2.5],
+        [2.4, 2.0, 1.6, 1.2, 0.9, 0.8, 0.9, 1.3, 1.7, 2.1, 2.5, 2.6, 2.4, 2.1, 1.6, 1.1, 0.8, 0.6, 0.7, 1.0, 1.4, 1.9, 2.3, 2.5],
+        [2.4, 2.2, 1.8, 1.4, 1.0, 0.8, 0.8, 1.0, 1.3, 1.7, 2.1, 2.3, 2.3, 2.1, 1.8, 1.4, 1.1, 0.9, 0.9, 1.1, 1.4, 1.8, 2.1, 2.4],
+        [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.8, 0.9, 1.1, 1.4, 1.7, 2.0, 2.1, 2.0, 1.9, 1.6, 1.4, 1.2, 1.2, 1.3, 1.5, 1.8, 2.1, 2.3],
+        [2.4, 2.3, 2.1, 1.8, 1.4, 1.1, 0.9, 0.9, 1.0, 1.1, 1.4, 1.6, 1.7, 1.8, 1.8, 1.7, 1.5, 1.4, 1.4, 1.5, 1.6, 1.8, 2.0, 2.2],
+        [2.3, 2.3, 2.1, 1.9, 1.6, 1.3, 1.1, 1.0, 1.0, 1.0, 1.1, 1.3, 1.4, 1.5, 1.5, 1.6, 1.6, 1.6, 1.6, 1.7, 1.8, 1.9, 2.1, 2.2],
+        [2.2, 2.2, 2.1, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.0, 1.0, 1.1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2],
+        [2.2, 2.2, 2.1, 2.0, 1.9, 1.8, 1.6, 1.4, 1.3, 1.1, 1.0, 1.0, 0.9, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 1.9, 2.0, 2.1, 2.1, 2.2],
+        [2.1, 2.1, 2.0, 2.0, 1.9, 1.8, 1.7, 1.5, 1.3, 1.1, 1.0, 0.8, 0.7, 0.8, 0.9, 1.1, 1.4, 1.6, 1.9, 2.0, 2.1, 2.2, 2.1, 2.0],
+        [2.1, 2.0, 2.0, 1.9, 2.0, 2.0, 2.0, 1.8, 1.8, 1.6, 1.3, 1.1, 0.8, 0.7, 0.6, 0.7, 0.9, 1.2, 1.5, 1.8, 2.0, 2.1, 2.1, 2.1],
+        [2.0, 1.9, 1.8, 1.8, 1.9, 2.0, 2.1, 2.1, 2.0, 1.8, 1.5, 1.2, 0.9, 0.7, 0.6, 0.6, 0.8, 1.1, 1.4, 1.8, 2.0, 2.1, 2.1, 2.0],
+        [1.9, 1.8, 1.7, 1.7, 1.8, 1.9, 2.1, 2.2, 2.2, 2.1, 1.8, 1.4, 1.1, 0.8, 0.6, 0.5, 0.7, 1.0, 1.4, 1.7, 2.0, 2.1, 2.1, 2.0],
+        [1.8, 1.6, 1.5, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.3, 2.1, 1.7, 1.3, 0.9, 0.7, 0.5, 0.6, 0.9, 1.3, 1.7, 2.0, 2.2, 2.2, 2.0],
+        [1.8, 1.5, 1.3, 1.2, 1.3, 1.5, 1.8, 2.2, 2.4, 2.4, 2.3, 1.9, 1.5, 1.1, 0.8, 0.6, 0.6, 0.9, 1.2, 1.7, 2.1, 2.3, 2.3, 2.1],
+        [1.8, 1.5, 1.2, 1.0, 1.0, 1.2, 1.6, 1.9, 2.3, 2.5, 2.4, 2.2, 1.8, 1.3, 0.9, 0.7, 0.7, 0.8, 1.2, 1.6, 2.1, 2.4, 2.5, 2.3],
+        [2.0, 1.5, 1.2, 0.9, 0.8, 0.9, 1.2, 1.6, 2.0, 2.4, 2.5, 2.3, 2.0, 1.6, 1.1, 0.9, 0.7, 0.9, 1.2, 1.6, 2.0, 2.4, 2.6, 2.5],
+        [2.2, 1.7, 1.3, 0.9, 0.7, 0.7, 0.9, 1.3, 1.7, 2.1, 2.3, 2.3, 2.1, 1.8, 1.4, 1.0, 0.9, 0.9, 1.1, 1.5, 2.0, 2.4, 2.6, 2.6],
+        [2.4, 2.0, 1.5, 1.0, 0.7, 0.6, 0.6, 0.9, 1.3, 1.8, 2.1, 2.2, 2.2, 1.9, 1.6, 1.3, 1.1, 1.0, 1.2, 1.5, 1.9, 2.3, 2.6, 2.7],
+        [2.6, 2.3, 1.8, 1.3, 0.9, 0.6, 0.5, 0.7, 1.0, 1.4, 1.7, 2.0, 2.0, 2.0, 1.7, 1.5, 1.3, 1.2, 1.2, 1.4, 1.8, 2.2, 2.5, 2.7]
+    ]
+
+    records = []
+    for day_idx in range(30):
+        day_num = day_idx + 1
+        for hour_idx in range(24):
+            dt = datetime.datetime(2026, 9, day_num, hour_idx, 0, 0)
+            records.append({
+                'Timestamp': dt,
+                'Latitude': "S7°38.659'",
+                'Longitude': "E113°01.641'",
+                'Day': day_num,
+                'Hour': hour_idx,
+                'Hour_sin': np.sin(2 * np.pi * hour_idx / 24.0),
+                'Hour_cos': np.cos(2 * np.pi * hour_idx / 24.0),
+                'Sea_Level_m': raw_matrix[day_idx][hour_idx]
+            })
+
+    df = pd.DataFrame(records)
+
+    # Feature & Target Split
+    X = df[['Day', 'Hour_sin', 'Hour_cos']]
+    y = df['Sea_Level_m']
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    mae = mean_absolute_error(y_test, model.predict(X_test))
+    r2 = r2_score(y_test, model.predict(X_test))
+
+    df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
+    return df, mae, r2
+
+df, mae_score, r2_score_val = load_official_dishidros_dataset()
+
+# Filter Data Realtime Menurut Jam Saat Ini
+current_day = now.day if now.month == 9 else 9
+current_hour = now.hour
+
+current_data = df[(df['Day'] == current_day) & (df['Hour'] == current_hour)]
+realtime_level = current_data['Sea_Level_m'].values[0] if not current_data.empty else df.loc[0, 'Sea_Level_m']
+ml_level = current_data['ML_Predicted_Sea_Level_m'].values[0] if not current_data.empty else df.loc[0, 'ML_Predicted_Sea_Level_m']
+
+# Panel Kontrol Sidebar
+st.sidebar.markdown("### ⚙️ Panel Kontrol EWS")
+enable_audio = st.sidebar.checkbox(
+    "🔔 Aktifkan Alarm Suara (EWS)", 
+    value=True, 
+    help="Memutar suara sirene otomatis saat level air laut < 0.2m"
+)
+test_alarm = st.sidebar.checkbox(
+    "🧪 Tes Alarm Manual (< 0.2m)", 
+    value=False, 
+    help="Simulasi memicu kondisi kritis untuk menguji alarm suara"
+)
+
+# Evaluasi Kondisi Kritis (< 0.2 meter)
+is_critical = (realtime_level < 0.2) or test_alarm
+
+# =========================================================
+# EARLY WARNING SYSTEM (EWS) AUDIO & VISUAL TRIGGER
+# =========================================================
+if is_critical:
+    st.error(f"🚨 **PERINGATAN DINI CRITICAL LOW WATER LEVEL!** Level air laut berada di bawah ambang batas aman! (Level Terdeteksi: {realtime_level:.2f} m)")
     
-    for day, row_vals in tide_matrix_dishidros.items():
-        base_dt = datetime(2026, 9, day, 0, 0, 0)
-        for col_idx, val in enumerate(row_vals):
-            dt = base_dt + timedelta(hours=col_idx)
-            times.append(dt)
-            elevations.append(val)
+    if enable_audio:
+        # Pemicu Audio Sirene Menggunakan Web Audio API (Lintas Perangkat HP/PC)
+        audio_js = """
+        <script>
+        function playEmergencyAlarm() {
+            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
             
-    df = pd.DataFrame({"Waktu": times, "Elevasi (m)": elevations}).sort_values("Waktu").reset_index(drop=True)
-    return df
-
-def get_realtime_tide_data(df, current_dt):
-    # Safely bound lookup within available data range
-    if current_dt <= df["Waktu"].iloc[0]:
-        return df.iloc[0]["Elevasi (m)"], df.iloc[0], df.iloc[0]
-    elif current_dt >= df["Waktu"].iloc[-1]:
-        return df.iloc[-1]["Elevasi (m)"], df.iloc[-1], df.iloc[-1]
-    
-    prev_r = df[df["Waktu"] <= current_dt].iloc[-1]
-    next_r = df[df["Waktu"] > current_dt].iloc[0]
-    
-    if prev_r["Waktu"] == next_r["Waktu"]:
-        cur_elev = prev_r["Elevasi (m)"]
-    else:
-        t_diff = (next_r["Waktu"] - prev_r["Waktu"]).total_seconds()
-        c_diff = (current_dt - prev_r["Waktu"]).total_seconds()
-        cur_elev = prev_r["Elevasi (m)"] + (c_diff / t_diff) * (next_r["Elevasi (m)"] - prev_r["Elevasi (m)"])
+            // Sirene Modulasi Darurat (850Hz ke 400Hz)
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(850, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
+            
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.start();
+            osc.stop(ctx.currentTime + 0.6);
+        }
         
-    return cur_elev, prev_r, next_r
+        // Loop Sirene Setiap 800 milidetik
+        setInterval(playEmergencyAlarm, 800);
+        </script>
+        """
+        components.html(audio_js, height=0, width=0)
 
-df_tide = build_base_dataframe()
-current_val, prev_point, next_point = get_realtime_tide_data(df_tide, now_time)
+# Header Utama Dashboard
+st.markdown(f"""
+<div style="background-color: #1e293b; border-left: 8px solid {'#ef4444' if is_critical else '#38bdf8'}; padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 style="margin:0; font-size: 22px; color: #f8fafc;">🌊 Smart Sea Water Level Monitoring</h1>
+            <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;">📍 Stasiun Intake Area PLTGU Grati — S7°38.659' E113°01.641'</p>
+        </div>
+        <div>
+            <span style="background-color: {'#ef4444' if is_critical else '#10b981'}; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 13px;">
+                {'🚨 CRITICAL WARNING' if is_critical else '🟢 NORMAL STATUS'}
+            </span>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-# -------------------------------------------------------------------
-# METRICS DISPLAY
-# -------------------------------------------------------------------
-c1, c2, c3, c4 = st.columns(4)
-c1.metric(
-    label=f"Muka Air GPS ({now_time.strftime('%H:%M:%S WIB')})", 
-    value=f"{current_val:.2f} m"
+# Kartu Ringkasan Metrik
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Waktu Observasi", f"{now.strftime('%H:%M')} WIB")
+m2.metric(
+    "Sea Level Realtime", 
+    f"{realtime_level:.2f} m", 
+    delta="- SURUT KRITIS (<0.2m)" if is_critical else "Aman", 
+    delta_color="inverse" if is_critical else "normal"
 )
-c2.metric("Pasang Tertinggi (HWL)", f"{df_tide['Elevasi (m)'].max():.1f} m")
-c3.metric("Rata-Rata Muka Air (MSL)", f"{df_tide['Elevasi (m)'].mean():.2f} m")
-c4.metric("Surut Terendah (LWL)", f"{df_tide['Elevasi (m)'].min():.1f} m")
+m3.metric("Prediksi ML Model", f"{ml_level:.2f} m")
+m4.metric("Akurasi AI (R²)", f"{r2_score_val * 100:.1f}%")
 
-st.caption(f"⚡ *Update otomatis aktif. Timestamp lokal: {now_time.strftime('%d %B %Y - %H:%M:%S WIB')}*")
-st.divider()
+# Grafik Plotly Interaktif
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=df['Timestamp'][:24],
+    y=df['Sea_Level_m'][:24],
+    mode='lines+markers',
+    name='Sea Level (m)',
+    line=dict(color='#38bdf8', width=3),
+    marker=dict(size=6)
+))
 
-# -------------------------------------------------------------------
-# VISUALIZATION
-# -------------------------------------------------------------------
-st.subheader("📈 Kurva Elevasi Air Realtime Sesuai Koordinat Pemantauan")
-
-fig, ax = plt.subplots(figsize=(14, 5.5))
-
-# Plot tide curve
-ax.plot(df_tide["Waktu"], df_tide["Elevasi (m)"], color="#0077B6", linewidth=2.2, marker="o", markersize=3.5, label="Elevasi Air (Chart Datum / m)")
-
-# Mean Sea Level Line
-msl_val = df_tide['Elevasi (m)'].mean()
-ax.axhline(msl_val, color="red", linestyle="--", alpha=0.6, label=f"MSL ({msl_val:.2f} m)")
-
-# Current Time Marking
-ax.axvline(now_time, color="#D62728", linestyle="-", linewidth=2, label=f"Waktu Sekarang ({now_time.strftime('%H:%M WIB')})")
-ax.plot(now_time, current_val, marker="o", markersize=9, color="#D62728")
-
-# Hourly Data Point Annotations
-for x, y in zip(df_tide["Waktu"], df_tide["Elevasi (m)"]):
-    ax.annotate(
-        f"{y:.1f}",
-        (x, y),
-        textcoords="offset points",
-        xytext=(0, 6),
-        ha='center',
-        fontsize=8,
-        fontweight='bold',
-        color='#03045E'
-    )
-
-# Realtime Marker Tag
-ax.annotate(
-    f"KOORDINAT GPS\nElevasi: {current_val:.2f} m\n({now_time.strftime('%H:%M WIB')})",
-    (now_time, current_val),
-    textcoords="offset points",
-    xytext=(0, -38),
-    ha='center',
-    fontsize=8.5,
-    fontweight='bold',
-    color='#D62728',
-    bbox=dict(boxstyle="round,pad=0.3", fc="#FFFFCC", ec="#D62728", lw=1.5, alpha=0.9)
+# Garis Ambang Batas Kritis (Threshold Line 0.2m)
+fig.add_hline(
+    y=0.2, 
+    line_dash="dash", 
+    line_color="#ef4444", 
+    annotation_text="Ambang Batas Kritis (0.2m)", 
+    annotation_position="bottom right",
+    annotation_font_color="#ef4444"
 )
 
-# Axis & Grid Formatting
-ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
-ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
-ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%b %H:%M"))
+fig.update_layout(
+    template='plotly_dark',
+    height=380,
+    margin=dict(l=20, r=20, t=30, b=20),
+    xaxis_title="Waktu",
+    yaxis_title="Ketinggian Air Laut (m)"
+)
 
-ax.set_xlim(datetime(2026, 9, 8, 0, 0), datetime(2026, 9, 10, 23, 59))
-ax.set_ylim(-0.1, df_tide["Elevasi (m)"].max() + 0.4)
-
-ax.set_ylabel("Ketinggian Muka Air / Chart Datum (m)", fontsize=10)
-ax.set_xlabel("Waktu (WIB)", fontsize=10)
-ax.grid(True, which="major", linestyle="--", alpha=0.5)
-ax.legend(loc="upper right")
-plt.xticks(rotation=30)
-plt.tight_layout()
-
-st.pyplot(fig)
-plt.close(fig)  # Prevents memory accumulation
-
-# Inspection Expander
-with st.expander("🔍 Detail Rincian Interpolasi Data Saat Ini"):
-    st.write(f"- **Titik Jam Sebelumnya ({prev_point['Waktu'].strftime('%H:%M WIB')}):** {prev_point['Elevasi (m)']} m")
-    st.write(f"- **Titik Jam Berikutnya ({next_point['Waktu'].strftime('%H:%M WIB')}):** {next_point['Elevasi (m)']} m")
-    st.write(f"- **Hasil Interpolasi ({now_time.strftime('%H:%M WIB')}):** `{current_val:.2f} m`")
+st.plotly_chart(fig, use_container_width=True)
