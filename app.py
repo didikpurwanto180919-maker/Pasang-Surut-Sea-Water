@@ -101,7 +101,6 @@ def fetch_maritim_bmkg_probolinggo():
         response = requests.get(url, headers=headers, timeout=10, verify=False)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            # Memastikan koneksi berhasil mengambil konten dari portal BMKG
             if "Probolinggo" in response.text or soup.find('title'):
                 return soup, "LIVE ONLINE (BMKG)"
     except Exception:
@@ -110,7 +109,7 @@ def fetch_maritim_bmkg_probolinggo():
 
 @st.cache_data
 def load_official_dishidros_dataset():
-    # Matrix resmi Dishidros / BMKG Stasiun 39. PROBOLINGGO (07° 44' 10.79" S / 113° 12' 59.64" E)
+    # Matrix resmi Dishidros / BMKG Stasiun 39. PROBOLINGGO
     raw_matrix_probolinggo = [
         [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.9, 1.0, 1.2, 1.6, 1.9, 2.1, 2.2, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 1.0, 1.3, 1.7, 2.1, 2.3],
         [2.5, 2.4, 2.2, 1.8, 1.5, 1.1, 0.9, 0.9, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.1, 1.3, 1.6, 1.9, 2.2],
@@ -156,6 +155,7 @@ def load_official_dishidros_dataset():
                 'Month': 9,
                 'Day': day_num,
                 'Hour': hour_idx,
+                'Hour_Label': f"{hour_idx:02d}:00",
                 'Sea_Level_Probolinggo': val_prob,
                 'Sea_Level_Grati': np.round(val_prob + 0.05 * np.sin(hour_idx), 2)
             })
@@ -185,13 +185,20 @@ df, mae_score, r2_score_val = load_official_dishidros_dataset()
 
 # SIDEBAR & SIMULATOR
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
+selected_date = st.sidebar.date_input(
+    "🗓️ Pilih Tanggal Monitoring:",
+    value=datetime.date(2026, 9, now.day if now.month == 9 else 9),
+    min_value=datetime.date(2026, 9, 1),
+    max_value=datetime.date(2026, 9, 30)
+)
+
 sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm HP)")
 st.sidebar.markdown("---")
 
 badge_color = "#34d399" if "ONLINE" in live_status else "#f59e0b"
 st.sidebar.markdown(f"🔗 **Data Resmi BMKG Status:**\n<span style='background-color: rgba(16, 185, 129, 0.2); color: {badge_color}; padding: 4px 8px; border-radius: 6px; font-weight: bold;'>{live_status}</span>\n\n[https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo](https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo)", unsafe_allow_html=True)
 
-current_day = now.day if now.month == 9 else 9
+current_day = selected_date.day
 current_hour = now.hour
 
 current_data = df[(df['Day'] == current_day) & (df['Hour'] == current_hour)]
@@ -275,7 +282,7 @@ with m1:
     <div class="metric-card">
         <div class="metric-title">Waktu Monitoring</div>
         <div class="metric-value">{now.strftime('%H:%M')} <span style="font-size:1.1rem; color:#94a3b8;">WIB</span></div>
-        <div class="metric-sub">{current_day} September 2026</div>
+        <div class="metric-sub">{selected_date.strftime('%d %B %Y')}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -319,97 +326,116 @@ with m5:
 
 st.write("")
 
-# OPTIONS & GRAFIK
-view_mode = st.sidebar.radio("Mode Tampilan Grafik:", options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"])
-selected_date = st.sidebar.date_input("Pilih Tanggal September 2026:", value=datetime.date(2026, 9, current_day), min_value=datetime.date(2026, 9, 1), max_value=datetime.date(2026, 9, 30))
+# GRAFIK PER JAM PER HARI (24 TANGGA JAM)
+col_left, col_right = st.columns([2.2, 0.8])
 
-df_daily = df[(df['Day'] == selected_date.day)]
-col_left, col_right = st.columns([2, 1])
+# Ambil data 24 jam penuh untuk hari yang dipilih
+df_daily = df[(df['Day'] == selected_date.day)].sort_values(by='Hour')
 
 with col_left:
-    st.subheader(f"📈 Hydro-Dynamic Curve ({selected_date.strftime('%d September 2026')})")
-    df_plot = df_daily if view_mode == "Mode Harian (24 Jam)" else df_daily[(df_daily['Hour'] >= current_hour) & (df_daily['Hour'] <= current_hour + 6)]
+    st.subheader(f"📈 Hydro-Dynamic Curve per Jam ({selected_date.strftime('%d %B %Y')})")
 
     fig = go.Figure()
 
-    # 1. Probolinggo BMKG Baseline
+    # 1. Line BMKG Probolinggo (Garis Kuning)
     fig.add_trace(go.Scatter(
-        x=df_plot['Timestamp'],
-        y=df_plot['Sea_Level_Probolinggo'],
+        x=df_daily['Hour_Label'],
+        y=df_daily['Sea_Level_Probolinggo'],
         mode='lines+markers+text',
         name='BMKG Probolinggo (07°44\'10.79"S 113°12\'59.64"E)',
-        text=[f"{v:.2f}" for v in df_plot['Sea_Level_Probolinggo']],
+        text=[f"{v:.2f}" for v in df_daily['Sea_Level_Probolinggo']],
         textposition='top center',
-        textfont=dict(color='#ffeb3b', size=11),
+        textfont=dict(color='#ffeb3b', size=11, family="Arial Bold"),
         line=dict(color='#ffeb3b', width=3),
-        marker=dict(size=7, color='#ffeb3b')
+        marker=dict(size=6, color='#ffeb3b')
     ))
 
-    # 2. AI ML Prediction
+    # 2. Line AI ML Prediction (Garis Putus-putus Biru Cyan)
     fig.add_trace(go.Scatter(
-        x=df_plot['Timestamp'],
-        y=df_plot['ML_Predicted_Sea_Level_m'],
+        x=df_daily['Hour_Label'],
+        y=df_daily['ML_Predicted_Sea_Level_m'],
         mode='lines+markers+text',
         name='AI ML Prediction (Grati)',
-        text=[f"{v:.2f}" for v in df_plot['ML_Predicted_Sea_Level_m']],
+        text=[f"{v:.2f}" for v in df_daily['ML_Predicted_Sea_Level_m']],
         textposition='bottom center',
         textfont=dict(color='#00e5ff', size=10),
         line=dict(color='#00e5ff', width=2, dash='dash'),
         marker=dict(size=5, symbol='x', color='#00e5ff')
     ))
 
-    # 3. Realtime Point Intake Grati
-    if selected_date.day == current_day:
+    # 3. Realtime Marker Point pada Jam Berjalan (Wajik Merah)
+    if selected_date.day == now.day:
+        current_hour_label = f"{current_hour:02d}:00"
         fig.add_trace(go.Scatter(
-            x=[realtime_timestamp],
+            x=[current_hour_label],
             y=[realtime_level],
             mode='markers+text',
-            name=f'Realtime Grati ({current_hour:02d}:00)',
+            name=f'Realtime Grati ({current_hour_label})',
             text=[f"📍 {realtime_level:.2f}m"],
             textposition='top right',
             textfont=dict(color='#ff3d00', size=13, family="Arial Black"),
             marker=dict(size=14, color='#ff3d00', symbol='diamond', line=dict(color='#ffffff', width=2))
         ))
 
-    # 4. Critical Threshold
+    # 4. Critical Level Line (Garis Merah Putus-putus)
     fig.add_trace(go.Scatter(
-        x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()],
-        y=[0.2, 0.2],
+        x=df_daily['Hour_Label'],
+        y=[0.2] * 24,
         mode='lines',
         name='Batas Critical (0.2m)',
         line=dict(color='#ff1744', width=2, dash='dot')
     ))
 
-    # TAMPILAN GRAFIK DENGAN LEGEND JELAS & PUTIH TERANG
+    # Layout Grafik Sesuai Tampilan Gambar
     fig.update_layout(
         template='plotly_dark',
         paper_bgcolor='rgba(15, 23, 42, 0.5)',
         plot_bgcolor='rgba(15, 23, 42, 0.5)',
         margin=dict(l=20, r=20, t=30, b=20),
-        height=480,
+        height=520,
         font=dict(size=13, color="#ffffff"),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=1.03,
             xanchor="right",
             x=1,
-            font=dict(size=12, color="#ffffff")
+            font=dict(size=11, color="#ffffff")
         ),
-        xaxis=dict(gridcolor='#334155', showgrid=True),
-        yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True, range=[-0.1, 3.1])
+        xaxis=dict(
+            title="Jam (00:00 - 23:00 WIB)",
+            gridcolor='#334155',
+            showgrid=True,
+            tickmode='linear',
+            dtick=1
+        ),
+        yaxis=dict(
+            title='Tinggi Air Laut (Meter)',
+            gridcolor='#334155',
+            showgrid=True,
+            range=[-0.1, 3.1]
+        )
     )
     st.plotly_chart(fig, use_container_width=True)
 
 with col_right:
-    st.subheader("🗺️ Perbandingan Posisi Stasiun")
+    st.subheader("🗺️ Lokasi Stasiun")
     map_data = pd.DataFrame({
         'lat': [-7.736331, -7.644317],
         'lon': [113.216567, 113.027350],
         'name': ['BMKG Probolinggo', 'Intake PLTGU Grati']
     })
-    st.map(map_data, zoom=10)
+    st.map(map_data, zoom=9)
 
 st.divider()
-st.subheader("📊 Datagrid Telemetri Perbandingan Lokasi")
-st.dataframe(df_plot[['Timestamp', 'Sea_Level_Probolinggo', 'Sea_Level_Grati', 'ML_Predicted_Sea_Level_m']], use_container_width=True)
+
+# TABEL DATA 24 JAM LENGKAP
+st.subheader(f"📊 Tabel Datagrid Telemetri 24 Jam ({selected_date.strftime('%d %B %Y')})")
+df_display = df_daily[['Hour_Label', 'Sea_Level_Probolinggo', 'Sea_Level_Grati', 'ML_Predicted_Sea_Level_m']].rename(columns={
+    'Hour_Label': 'Jam (WIB)',
+    'Sea_Level_Probolinggo': 'BMKG Probolinggo (m)',
+    'Sea_Level_Grati': 'Observed Grati (m)',
+    'ML_Predicted_Sea_Level_m': 'AI Prediction (m)'
+})
+
+st.dataframe(df_display, use_container_width=True, hide_index=True)
