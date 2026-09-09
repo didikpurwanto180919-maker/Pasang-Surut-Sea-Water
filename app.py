@@ -359,7 +359,6 @@ with col_left:
 
 with col_right:
     st.subheader("🗺️ Geospatial Intake Sensor")
-    # KOORDINAT PRESISI DESIMAL: S7°38.659' E113°01.641'
     lat_dec = -7.644317
     lon_dec = 113.027350
 
@@ -393,9 +392,23 @@ with tab_data:
 with tab_export:
     c1, c2 = st.columns(2)
     csv_bytes = df.to_csv(index=False).encode('utf-8')
-    c1.download_button("📥 Unduh Laporan Telemetri (CSV)", csv_bytes, 'Report_SeaLevel_S7_38_659_E113_01_641.csv', 'text/csv')
+    c1.download_button(
+        "📥 Unduh Laporan Telemetri (CSV)", 
+        csv_bytes, 
+        'Report_SeaLevel_S7_38_659_E113_01_641.csv', 
+        'text/csv'
+    )
 
     excel_buffer = io.BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Data_S7_38_659_E113_01_641', index=False)
-    c2.download_button("📥 Unduh Laporan Telemetri (Excel)", excel_buffer.getvalue(), 'Report_SeaLevel_S7_38_659_E113_01_641.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    # Fallback aman jika openpyxl belum terinstal di sistem
+    try:
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Data_S7_38_659_E113_01_641', index=False)
+        c2.download_button(
+            "📥 Unduh Laporan Telemetri (Excel)", 
+            excel_buffer.getvalue(), 
+            'Report_SeaLevel_S7_38_659_E113_01_641.xlsx', 
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception:
+        c2.warning("⚠️ Module `openpyxl` belum terpasang. Jalankan `pip install openpyxl` untuk fitur unduh Excel.")
