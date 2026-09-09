@@ -4,107 +4,95 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
-import time
+import pytz
 
-# Konfigurasi Halaman Utama
 st.set_page_config(
-    page_title="Realtime Pasut Probolinggo / Pasuruan",
+    page_title="Pasut Probolinggo / Pasuruan WIB",
     page_icon="🌊",
     layout="wide"
 )
 
 # -------------------------------------------------------------------
-# FITUR AUTO-REFRESH SISI CLIENT (60 DETIK)
+# SETTING ZONA WAKTU INDONESIA BARAT (WIB / GMT+7)
 # -------------------------------------------------------------------
+wib_tz = pytz.timezone('Asia/Jakarta')
+# Ambil jam sekarang dalam zona waktu WIB murni
+now_time = datetime.now(wib_tz).replace(tzinfo=None)
+
+# Auto-Refresh 60 Detik
 try:
     from streamlit_autorefresh import st_autorefresh
-    # Refresh otomatis halaman setiap 60.000 ms (60 detik)
-    count = st_autorefresh(interval=60000, key="pasut_autorefresh")
+    st_autorefresh(interval=60000, key="pasut_autorefresh")
 except ImportError:
-    # Fallback jika library streamlit-autorefresh belum terinstall
-    st.sidebar.warning("Saran: Install `streamlit-autorefresh` via pip agar refresh lebih mulus.")
+    pass
 
 st.title("🌊 Real-time Pasang Surut - Probolinggo / Pasuruan")
-st.caption("Data Pasang Surut Resmi Dishidros TNI-AL / BMKG (Chart Datum LWL)")
-
-# Waktu Realtime Sistem Saat Ini (Jam:Menit:Detik)
-now_time = datetime.now()
+st.caption("Koordinat: **S7°38.659' E113°01.641'** | Data Chart Datum LWL Dishidros/BMKG")
 
 # -------------------------------------------------------------------
-# DATA MATRIKS TABEL RESMI (SEPTEMBER 2026)
+# DATA TABEL SEPTEMBER 2026
 # -------------------------------------------------------------------
 tide_table_data = {
-    7: [2.1, 2.0, 2.0, 1.9, 2.0, 2.0, 2.0, 1.9, 1.8, 1.6, 1.3, 1.1, 0.8, 0.7, 0.6, 0.7, 0.9, 1.2, 1.5, 1.8, 2.0, 2.1, 2.1, 2.1],
     8: [1.7, 1.6, 1.6, 1.7, 1.9, 2.2, 2.4, 2.6, 2.5, 2.2, 1.8, 1.3, 0.8, 0.5, 0.2, 0.2, 0.5, 0.9, 1.4, 1.8, 2.2, 2.3, 2.2, 2.0],
     9: [1.8, 1.5, 1.4, 1.4, 1.6, 1.9, 2.3, 2.6, 2.7, 2.6, 2.3, 1.8, 1.2, 0.7, 0.3, 0.1, 0.2, 0.6, 1.1, 1.6, 2.1, 2.4, 2.4, 2.2],
-    10: [1.9, 1.6, 1.3, 1.2, 1.3, 1.5, 1.9, 2.4, 2.7, 2.8, 2.6, 2.2, 1.6, 1.0, 0.5, 0.2, 0.2, 0.4, 0.8, 1.4, 1.9, 2.3, 2.5, 2.4],
-    11: [2.1, 1.7, 1.3, 1.1, 1.0, 1.2, 1.6, 2.0, 2.5, 2.7, 2.7, 2.5, 2.0, 1.4, 0.9, 0.4, 0.3, 0.3, 0.7, 1.2, 1.7, 2.2, 2.5, 2.5]
+    10: [1.9, 1.6, 1.3, 1.2, 1.3, 1.5, 1.9, 2.4, 2.7, 2.8, 2.6, 2.2, 1.6, 1.0, 0.5, 0.2, 0.2, 0.4, 0.8, 1.4, 1.9, 2.3, 2.5, 2.4]
 }
 
-def load_and_interpolate_data():
+def load_data():
     times = []
     elevations = []
-    
-    # Susun Data Per Jam
     for day, vals in tide_table_data.items():
         for hour_idx, val in enumerate(vals):
-            dt = datetime(2026, 9, day, hour_idx, 0, 0)
-            times.append(dt)
+            times.append(datetime(2026, 9, day, hour_idx, 0, 0))
             elevations.append(val)
             
-    df = pd.DataFrame({"Waktu": times, "Elevasi (m)": elevations})
+    df = pd.DataFrame({"Waktu": times, "Elevasi (m)": elevations}).sort_values("Waktu").reset_index(drop=True)
     
-    # Interpolasi Nilai Realtime Menit-demi-Menit untuk Waktu Sekarang
-    df_sorted = df.sort_values("Waktu").reset_index(drop=True)
+    # Hitung nilai interpolasi persis di menit berjalan jam WIB
+    prev_r = df[df["Waktu"] <= now_time].iloc[-1] if not df[df["Waktu"] <= now_time].empty else df.iloc[0]
+    next_r = df[df["Waktu"] > now_time].iloc[0] if not df[df["Waktu"] > now_time].empty else df.iloc[-1]
     
-    # Hitung elevasi persis pada menit saat ini
-    prev_row = df_sorted[df_sorted["Waktu"] <= now_time].iloc[-1] if not df_sorted[df_sorted["Waktu"] <= now_time].empty else df_sorted.iloc[0]
-    next_row = df_sorted[df_sorted["Waktu"] > now_time].iloc[0] if not df_sorted[df_sorted["Waktu"] > now_time].empty else df_sorted.iloc[-1]
-    
-    if prev_row["Waktu"] == next_row["Waktu"]:
-        current_elev = prev_row["Elevasi (m)"]
+    if prev_r["Waktu"] == next_r["Waktu"]:
+        cur_elev = prev_r["Elevasi (m)"]
     else:
-        # Interpolasi Linear Sesuai Menit
-        time_diff = (next_row["Waktu"] - prev_row["Waktu"]).total_seconds()
-        current_diff = (now_time - prev_row["Waktu"]).total_seconds()
-        weight = current_diff / time_diff
-        current_elev = prev_row["Elevasi (m)"] + weight * (next_row["Elevasi (m)"] - prev_row["Elevasi (m)"])
+        t_diff = (next_r["Waktu"] - prev_r["Waktu"]).total_seconds()
+        c_diff = (now_time - prev_r["Waktu"]).total_seconds()
+        cur_elev = prev_r["Elevasi (m)"] + (c_diff / t_diff) * (next_r["Elevasi (m)"] - prev_r["Elevasi (m)"])
         
-    return df_sorted, current_elev
+    return df, cur_elev
 
-df_tide, current_val = load_and_interpolate_data()
+df_tide, current_val = load_data()
 
 # -------------------------------------------------------------------
-# METRIK BUKAN RETAIL
+# METRIK UTAMA
 # -------------------------------------------------------------------
 c1, c2, c3, c4 = st.columns(4)
-c1.metric(f"Muka Air Realtime ({now_time.strftime('%H:%M:%S WIB')})", f"{current_val:.2f} m")
+c1.metric(f"Muka Air WIB ({now_time.strftime('%H:%M:%S WIB')})", f"{current_val:.2f} m")
 c2.metric("Pasang Tertinggi (HWL)", f"{df_tide['Elevasi (m)'].max():.1f} m")
 c3.metric("Rata-rata (MSL)", f"{df_tide['Elevasi (m)'].mean():.2f} m")
 c4.metric("Surut Terendah (LWL)", f"{df_tide['Elevasi (m)'].min():.1f} m")
 
-st.caption(f"⚡ *Auto-refresh aktif. Terakhir diperbarui pada: {now_time.strftime('%d %B %Y - %H:%M:%S WIB')}*")
 st.divider()
 
 # -------------------------------------------------------------------
-# GRAFIK MATPLOTLIB DINAMIS
+# GRAFIK MATPLOTLIB
 # -------------------------------------------------------------------
-st.subheader("📈 Grafik Elevasi Pasang Surut Realtime")
+st.subheader("📈 Grafik Elevasi Pasang Surut Realtime WIB")
 
 fig, ax = plt.subplots(figsize=(15, 6))
 
-# Plot Kurva Utama
+# Plot Kurva utama
 ax.plot(df_tide["Waktu"], df_tide["Elevasi (m)"], color="#0077B6", linewidth=2.5, marker="o", markersize=3.5, label="Elevasi Chart Datum (m)")
 
-# Garis Rata-rata (MSL)
+# Garis MSL
 msl_val = df_tide['Elevasi (m)'].mean()
 ax.axhline(msl_val, color="red", linestyle="--", alpha=0.6, label=f"MSL ({msl_val:.2f} m)")
 
-# Penanda Garis Vertikal & Titik REALTIME "SAAT INI"
+# Penanda Garis Vertikal jam 17:21 WIB
 ax.axvline(now_time, color="#D62728", linestyle="-", linewidth=2, label=f"Saat Ini ({now_time.strftime('%H:%M WIB')})")
 ax.plot(now_time, current_val, marker="o", markersize=10, color="#D62728")
 
-# Label Angka Teks di Setiap Titik Jam
+# Tampilkan angka di tiap titik jam
 for x, y in zip(df_tide["Waktu"], df_tide["Elevasi (m)"]):
     ax.annotate(
         f"{y:.1f}",
@@ -117,7 +105,7 @@ for x, y in zip(df_tide["Waktu"], df_tide["Elevasi (m)"]):
         color='#03045E'
     )
 
-# Highlight Banner "SAAT INI" Mengikuti Menit & Jam Jalan
+# Highlight Banner "SAAT INI"
 ax.annotate(
     f"SAAT INI: {current_val:.2f}m\n({now_time.strftime('%H:%M WIB')})",
     (now_time, current_val),
@@ -130,11 +118,15 @@ ax.annotate(
     bbox=dict(boxstyle="round,pad=0.3", fc="#FFFFCC", ec="#D62728", lw=1.5, alpha=0.9)
 )
 
+# Format Sumbu X & Y
 ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
 ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
 ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%b %H:%M"))
 
+# Batasi rentang sumbu X agar fokus pada tanggal 8-10 September saja
+ax.set_xlim(datetime(2026, 9, 8, 0, 0), datetime(2026, 9, 10, 23, 59))
 ax.set_ylim(-0.1, df_tide["Elevasi (m)"].max() + 0.4)
+
 ax.set_ylabel("Ketinggian Muka Air / Chart Datum (Meter)", fontsize=11)
 ax.set_xlabel("Waktu (WIB)", fontsize=11)
 ax.grid(True, which="major", linestyle="--", alpha=0.5)
@@ -143,11 +135,3 @@ plt.xticks(rotation=35)
 plt.tight_layout()
 
 st.pyplot(fig)
-
-# -------------------------------------------------------------------
-# TABEL DETAIL
-# -------------------------------------------------------------------
-with st.expander("📄 Rincian Tabel Pasang Surut"):
-    df_show = df_tide.copy()
-    df_show["Waktu"] = df_show["Waktu"].dt.strftime("%d %B %Y - %H:%M WIB")
-    st.dataframe(df_show, use_container_width=True)
