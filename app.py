@@ -20,7 +20,7 @@ st.caption("Koordinat Target Presisi: **S 7° 38.659' E 113° 01.641'** (Selat M
 now_time = datetime.now().replace(second=0, microsecond=0)
 
 # -------------------------------------------------------------------
-# FUNGSI FETCH DATA & OLAHQ WAKTU REALTIME
+# FUNGSI FETCH DATA & OLAH WAKTU REALTIME
 # -------------------------------------------------------------------
 @st.cache_data(ttl=900)
 def get_bmkg_pasuruan_data():
@@ -37,7 +37,7 @@ def get_bmkg_pasuruan_data():
             matches = re.findall(r'([+-]\d+\.\d+)[\s]*m', text)
             
             if len(matches) >= 24:
-                elevations = [float(v) for v in matches[:48]] # Ambil 24-48 jam saja
+                elevations = [float(v) for v in matches[:36]] # Batasi 36 titik jam
                 start_time = datetime.now().replace(minute=0, second=0, microsecond=0) - timedelta(hours=6)
                 times = [start_time + timedelta(hours=i) for i in range(len(elevations))]
                 df = pd.DataFrame({"Waktu": times, "Elevasi (m)": elevations})
@@ -90,32 +90,63 @@ if df_tide is not None and not df_tide.empty:
 
     st.divider()
 
-    # Grafik Pasang Surut dengan Penanda "JAM SEKARANG"
-    st.subheader("📈 Grafik Elevasi Pasang Surut (Fokus Waktu Real-Time)")
+    # Grafik Pasang Surut dengan Angka Realtime di Tiap Titik
+    st.subheader("📈 Grafik Elevasi Pasang Surut (Dengan Label Angka Real-Time)")
     
-    fig, ax = plt.subplots(figsize=(14, 5))
+    fig, ax = plt.subplots(figsize=(15, 6))
     
     # Plot Kurva Utama
-    ax.plot(df_tide["Waktu"], df_tide["Elevasi (m)"], color="#0077B6", linewidth=2.5, marker="o", markersize=3, label="Elevasi Air Laut (m)")
+    ax.plot(df_tide["Waktu"], df_tide["Elevasi (m)"], color="#0077B6", linewidth=2.5, marker="o", markersize=4, label="Elevasi Air Laut (m)")
     
     # Garis Rata-rata Air (MSL)
     msl_val = df_tide['Elevasi (m)'].mean()
-    ax.axhline(msl_val, color="red", linestyle="--", alpha=0.7, label=f"Mean Sea Level / MSL ({msl_val:.2f} m)")
+    ax.axhline(msl_val, color="red", linestyle="--", alpha=0.6, label=f"MSL ({msl_val:.2f} m)")
     
     # Garis Penanda "WAKTU SEKARANG"
     ax.axvline(now_time, color="#D62728", linestyle="-", linewidth=2, label=f"Saat Ini ({now_time.strftime('%H:%M')})")
-    ax.plot(current_row["Waktu"], current_val, marker="o", markersize=9, color="#D62728")
+    ax.plot(current_row["Waktu"], current_val, marker="o", markersize=10, color="#D62728")
 
-    # Format Sumbu X
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
+    # MENAMPILKAN ANGKA PADA SETIAP TITIK DATA GRAFIK
+    for x, y in zip(df_tide["Waktu"], df_tide["Elevasi (m)"]):
+        # Beri offset posisi teks sedikit di atas titik data
+        ax.annotate(
+            f"{y:+.2f}",
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 8),
+            ha='center',
+            fontsize=8,
+            fontweight='bold',
+            color='#03045E'
+        )
+
+    # Highlight khusus angka Jam Sekarang (warna merah tebal)
+    ax.annotate(
+        f"SAAT INI: {current_val:+.2f}m",
+        (current_row["Waktu"], current_val),
+        textcoords="offset points",
+        xytext=(0, -20),
+        ha='center',
+        fontsize=9,
+        fontweight='bold',
+        color='#D62728',
+        bbox=dict(boxstyle="round,pad=0.2", fc="yellow", ec="#D62728", lw=1, alpha=0.8)
+    )
+
+    # Format Sumbu X & Y
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
     ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%b %H:%M"))
+
+    # Longgarkan batas Y agar angka tidak terpotong di bagian atas/bawah
+    y_min, y_max = df_tide["Elevasi (m)"].min(), df_tide["Elevasi (m)"].max()
+    ax.set_ylim(y_min - 0.35, y_max + 0.35)
 
     ax.set_ylabel("Elevasi Muka Air (Meter)", fontsize=11)
     ax.set_xlabel("Waktu (WIB)", fontsize=11)
     ax.grid(True, which="major", linestyle="--", alpha=0.5)
     ax.legend(loc="upper right")
-    plt.xticks(rotation=30)
+    plt.xticks(rotation=40)
     plt.tight_layout()
 
     st.pyplot(fig)
