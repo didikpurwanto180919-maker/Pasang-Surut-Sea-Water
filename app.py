@@ -25,11 +25,19 @@ try:
 except Exception:
     st_autorefresh_installed = False
 
+# Safe Import untuk Folium Map Integration
+try:
+    import folium
+    from streamlit_folium import st_folium
+    folium_installed = True
+except Exception:
+    folium_installed = False
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Config Halaman
 st.set_page_config(
-    page_title="Pasang Surut Air Laut - Probolinggo (S7°38.659' E113°01.641')",
+    page_title="Pasang Surut Air Laut - S7°38.659' E113°01.641'",
     page_icon="🌊",
     layout="wide"
 )
@@ -37,12 +45,12 @@ st.set_page_config(
 if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
-# Header Aplikasi dengan Koordinat Eksplisit
+# Header Aplikasi
 st.title("🌊 Prediksi & Real-Time Data Pasang Surut Air Laut Probolinggo")
-st.caption("📍 **Lokasi Koordinat Target:** S7°38.659' E113°01.641' (Pelabuhan/Pesisir Probolinggo)")
+st.caption("📍 **Lokasi Koordinat Target:** S7°38.659' E113°01.641' (PLTGU Grati / Perairan Probolinggo)")
 
 st.markdown("""
-Aplikasi ini menampilkan **Data Real-Time Jam Sekarang (WIB)** yang diperbarui otomatis setiap **60 detik**, dikombinasikan dengan status **BMKG Maritim** dan model **Machine Learning**.
+Aplikasi ini menampilkan **Data Real-Time Jam Sekarang (WIB)** yang diperbarui otomatis setiap **60 detik**, dikombinasikan dengan status **BMKG Maritim**, visualisasi **Peta Lokasi**, dan model **Machine Learning**.
 """)
 
 # 1. FUNCTION FETCH DATA BMKG
@@ -113,7 +121,7 @@ def generate_and_train():
 df = generate_and_train()
 bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
-# 3. REALTIME PANEL (WIB & KOORDINAT)
+# 3. REALTIME PANEL
 current_month = now.month
 current_day = now.day
 current_hour = now.hour
@@ -129,7 +137,6 @@ else:
 
 st.info(f"⏱️ **Status Real-Time:** Terakhir diperbarui jam **{now.strftime('%H:%M:%S WIB')}** (Auto-refresh setiap 60 detik)")
 
-# Layout Card Metric Tambahan
 rc1, rc2, rc3, rc4, rc5 = st.columns(5)
 rc1.metric("Waktu Sekarang", now.strftime("%Y-%m-%d %H:%M WIB"))
 rc2.metric("Koordinat Lokasi", "S7°38.659' E113°01.641'")
@@ -139,7 +146,44 @@ rc5.metric("Status Koneksi BMKG", f"🟢 {bmkg_msg}" if bmkg_status else "🔴 O
 
 st.divider()
 
-# 4. KONTROL SIDEBAR
+# ==========================================
+# 4. TAMPILAN PETA LOKASI REALTIME (OPENSTREETMAP / FOLIUM)
+# ==========================================
+st.subheader("🗺️ Tampilan Peta Lokasi Real-Time (S7°38.659' E113°01.641')")
+
+lat_decimal = -7.644317
+lon_decimal = 113.027350
+
+col_map1, col_map2 = st.columns([3, 1])
+
+with col_map1:
+    if folium_installed:
+        m = folium.Map(location=[lat_decimal, lon_decimal], zoom_start=15)
+        folium.Marker(
+            [lat_decimal, lon_decimal],
+            popup="Titik Pantau Pasang Surut: S7°38.659' E113°01.641'",
+            tooltip="📍 S7°38.659' E113°01.641' (PLTGU Grati / Probolinggo)",
+            icon=folium.Icon(color="red", icon="info-sign")
+        ).add_to(m)
+        st_folium(m, width="100%", height=350)
+    else:
+        # Fallback Native Streamlit Map jika Folium belum terpasang
+        map_data = pd.DataFrame({'lat': [lat_decimal], 'lon': [lon_decimal]})
+        st.map(map_data, zoom=14)
+
+with col_map2:
+    st.markdown("### 📌 Detail Titik Stasiun")
+    st.write("**Nama Stasiun:** Perairan Probolinggo / PLTGU Grati")
+    st.write("**Latitude (S):** 7°38.659' ( -7.644317 )")
+    st.write("**Longitude (E):** 113°01.641' ( 113.027350 )")
+    st.write(f"**Tinggi Air Laut Saat Ini:** `{realtime_level:.2f} Meter`")
+    st.write(f"**Rata-rata (MSL):** `1.40 Meter`")
+
+st.divider()
+
+# ==========================================
+# 5. KONTROL SIDEBAR & GRAFIK VISUALISASI
+# ==========================================
 st.sidebar.header("⚙️ Kontrol Grafik")
 
 view_mode = st.sidebar.radio(
@@ -156,7 +200,6 @@ selected_date = st.sidebar.date_input(
 
 df_daily = df[(df['Timestamp'].dt.date == selected_date)]
 
-# 5. GRAFIK VISUALISASI HARIAN / PER JAM
 if view_mode == "Mode Harian (24 Jam)":
     st.subheader(f"📈 Grafik Pasang Surut Harian ({selected_date.strftime('%d %B %Y')}) — S7°38.659' E113°01.641'")
     df_plot = df_daily
@@ -187,7 +230,9 @@ plt.xticks(rotation=0)
 
 st.pyplot(fig)
 
+# ==========================================
 # 6. TABEL DATA & UNDUH FILE
+# ==========================================
 st.divider()
 st.subheader("📊 Tabel Data & Unduh File")
 
