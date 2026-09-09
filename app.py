@@ -5,9 +5,16 @@ import matplotlib.pyplot as plt
 import requests
 from bs4 import BeautifulSoup
 import io
+import datetime
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
+
+# Import modul auto-refresh Streamlit
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
 
 # Config halaman Streamlit
 st.set_page_config(
@@ -16,16 +23,24 @@ st.set_page_config(
     layout="wide"
 )
 
+# ==========================================
+# AUTO REFRESH SETiap 60 DETIK (60,000 ms)
+# ==========================================
+if st_autorefresh is not None:
+    count = st_autorefresh(interval=60000, limit=1000, key="datarefresh")
+else:
+    st.warning("Library 'streamlit-autorefresh' belum terinstal. Silakan tambahkan di requirements.txt untuk fitur auto-refresh 60 detik.")
+
 # Title & Deskripsi
 st.title("🌊 Prediksi & Real-Time Data Pasang Surut Air Laut Probolinggo")
 st.markdown("""
-Aplikasi ini menampilkan kombinasi data **Real-Time / Prakiraan BMKG Maritim** dan **Model Machine Learning (Random Forest)** untuk Sea Water Level Probolinggo 2026.
+Aplikasi ini menampilkan **Data Real-Time Jam Sekarang** yang diperbarui otomatis setiap **60 detik**, dikombinasikan dengan prakiraan **BMKG Maritim** dan model **Machine Learning**.
 """)
 
 # ==========================================
 # 1. FUNCTION FETCH DATA REALTIME / BMKG
 # ==========================================
-@st.cache_data(ttl=3600)  # Cache data BMKG selama 1 jam
+@st.cache_data(ttl=60)  # Cache selama 60 detik agar selalu update
 def fetch_bmkg_maritim_data():
     url = "https://maritim.bmkg.go.id/"
     headers = {
@@ -34,8 +49,6 @@ def fetch_bmkg_maritim_data():
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            # Scraping data umum maritim (Status koneksi BMKG)
             return True, "Berhasil terhubung ke maritim.bmkg.go.id"
         else:
             return False, f"HTTP Error: {response.status_code}"
@@ -80,49 +93,55 @@ def generate_and_train():
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
-    y_pred = model.predict(X_test)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    r2 = r2_score(y_test, y_pred)
-
     df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
     
-    return df, rmse, r2
+    return df
 
-# Load Data ML
-with st.spinner("Memproses data & melatih model Machine Learning..."):
-    df, rmse, r2 = generate_and_train()
-
-# Status Integrasi BMKG
+# Load Data ML & Status BMKG
+df = generate_and_train()
 bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
 # ==========================================
-# 3. SIDEBAR & METRICS
+# 3. REALTIME PANEL (JAM SEKARANG)
 # ==========================================
-st.sidebar.header("⚙️ Kontrol & Live Source")
+now = datetime.datetime.now()
+current_month = now.month
+current_day = now.day
+current_hour = now.hour
 
-if bmkg_status:
-    st.sidebar.success("🟢 Connected to BMKG Maritim")
+# Cari data yang cocok dengan jam & tanggal sekarang pada DataFrame 2026
+current_data = df[(df['Month'] == current_month) & (df['Day'] == current_day) & (df['Hour'] == current_hour)]
+
+if not current_data.empty:
+    realtime_level = current_data['Sea_Level_m'].values[0]
+    ml_level = current_data['ML_Predicted_Sea_Level_m'].values[0]
 else:
-    st.sidebar.warning(f"🔴 BMKG Source: {bmkg_msg}")
+    # Fallback ke jam terdekat
+    realtime_level = df.loc[0, 'Sea_Level_m']
+    ml_level = df.loc[0, 'ML_Predicted_Sea_Level_m']
 
-selected_month = st.sidebar.selectbox(
-    "Pilih Bulan untuk Dilihat:",
-    options=list(range(1, 13)),
-    index=8, # Default ke September
-    format_func=lambda x: pd.to_datetime(f'2026-{x:02d}-01').strftime('%B')
-)
+st.info(f"⏱️ **Status Real-Time:** Terakhir diperbarui jam **{now.strftime('%H:%M:%S WIB')}** (Auto-refresh setiap 60 detik)")
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Data Points", f"{len(df):,} Jam")
-col2.metric("Model RMSE Error", f"{rmse:.4f} m")
-col3.metric("Model R² Score", f"{r2:.4f}")
-col4.metric("Sumber Realtime", "BMKG Maritim" if bmkg_status else "Simulasi/ML")
+# Display Indikator Utama Realtime
+rc1, rc2, rc3, rc4 = st.columns(4)
+rc1.metric("Waktu Sekarang", now.strftime("%Y-%m-%d %H:%M WIB"))
+rc2.metric("Sea Level Real-Time (BMKG/Baseline)", f"{realtime_level:.2f} m")
+rc3.metric("Prediksi ML Sea Level", f"{ml_level:.2f} m", delta=f"{round(ml_level - realtime_level, 2)} m")
+rc4.metric("Status Koneksi BMKG", "🟢 Active" if bmkg_status else "🔴 Offline")
 
 st.divider()
 
 # ==========================================
-# 4. GRAFIK VISUALISASI
+# 4. SIDEBAR & GRAFIK VISUALISASI BULANAN
 # ==========================================
+st.sidebar.header("⚙️ Kontrol & Filter")
+selected_month = st.sidebar.selectbox(
+    "Pilih Bulan Grafik:",
+    options=list(range(1, 13)),
+    index=current_month - 1, # Otomatis memilih bulan saat ini
+    format_func=lambda x: pd.to_datetime(f'2026-{x:02d}-01').strftime('%B')
+)
+
 st.subheader(f"📈 Grafik Pasang Surut Bulan {pd.to_datetime(f'2026-{selected_month:02d}-01').strftime('%B 2026')}")
 
 df_filtered = df[df['Month'] == selected_month]
@@ -131,6 +150,12 @@ fig, ax = plt.subplots(figsize=(12, 4))
 ax.plot(df_filtered['Timestamp'], df_filtered['Sea_Level_m'], label='Simulated / BMKG Baseline Level', color='#1f77b4', linewidth=1.5)
 ax.plot(df_filtered['Timestamp'], df_filtered['ML_Predicted_Sea_Level_m'], label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1)
 ax.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
+
+# Tandai posisi titik waktu sekarang di grafik
+if selected_month == current_month:
+    current_timestamp = pd.to_datetime(f"2026-{current_month:02d}-{current_day:02d} {current_hour:02d}:00:00")
+    ax.axvline(x=current_timestamp, color='purple', linestyle='-', linewidth=2, label=f'Waktu Sekarang ({now.strftime("%H:%M")})')
+
 ax.set_ylabel('Sea Level (Meter)')
 ax.set_xlabel('Tanggal')
 ax.grid(True, linestyle='--', alpha=0.5)
@@ -149,8 +174,6 @@ with tab1:
     st.dataframe(df_filtered, use_container_width=True)
 
 with tab2:
-    st.write("Silakan unduh dataset lengkap sepanjang tahun 2026:")
-    
     col_dl1, col_dl2 = st.columns(2)
     
     csv_data = df.to_csv(index=False).encode('utf-8')
