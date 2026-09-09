@@ -4,8 +4,8 @@ import urllib3
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
-import streamlit.components.v1 as components
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 try:
   import pytz
 
-  wib_tz = pytz.timezone('Asia/Jakarta')
+  wib_tz = pytz.timezone("Asia/Jakarta")
   now = datetime.datetime.now(wib_tz)
 except Exception:
   now = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
@@ -26,6 +26,15 @@ try:
   st_autorefresh_installed = True
 except Exception:
   st_autorefresh_installed = False
+
+# Safe Import Folium Map
+try:
+  import folium
+  from streamlit_folium import st_folium
+
+  folium_installed = True
+except Exception:
+  folium_installed = False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -40,8 +49,43 @@ st.set_page_config(
 if st_autorefresh_installed:
   st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
+# Custom CSS
+st.markdown(
+    """
+<style>
+    html, body, [class*="css"] { font-size: 18px !important; }
+    .stApp { background-color: #0b0f19; color: #e2e8f0; }
 
-# Load Dataset & ML Model
+    .main-header {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        padding: 25px 30px;
+        border-radius: 14px;
+        border: 1px solid #334155;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        margin-bottom: 25px;
+    }
+    .main-header h1 { color: #38bdf8; font-weight: 800; margin: 0; font-size: 2.3rem !important; }
+    .main-header p { color: #cbd5e1; margin: 8px 0 0 0; font-size: 1.2rem !important; }
+
+    .metric-card {
+        background: rgba(30, 41, 59, 0.85);
+        backdrop-filter: blur(10px);
+        border: 1px solid #475569;
+        border-radius: 12px;
+        padding: 20px 15px;
+        text-align: center;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    }
+    .metric-title { font-size: 1rem !important; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.8px; }
+    .metric-value { font-size: 2.2rem !important; font-weight: 800; color: #f8fafc; margin: 8px 0; }
+    .metric-sub { font-size: 1rem !important; color: #38bdf8; font-weight: 600; }
+    .badge-success { background-color: rgba(16, 185, 129, 0.25); color: #34d399; border: 1px solid #10b981; padding: 4px 12px; border-radius: 8px; font-size: 1rem !important; font-weight: 700; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
 @st.cache_data
 def load_official_dishidros_dataset():
   raw_matrix = [
@@ -845,6 +889,7 @@ def load_official_dishidros_dataset():
 
   df = pd.DataFrame(records)
 
+  # Model Training using Cyclical Features
   X = df[['Day', 'Hour_sin', 'Hour_cos']]
   y = df['Sea_Level_m']
 
@@ -863,7 +908,7 @@ def load_official_dishidros_dataset():
 
 df, mae_score, r2_score_val = load_official_dishidros_dataset()
 
-# Simulasi Jam Realtime
+# Realtime calculation
 current_day = now.day if now.month == 9 else 9
 current_hour = now.hour
 
@@ -879,70 +924,18 @@ ml_level = (
     else df.loc[0, 'ML_Predicted_Sea_Level_m']
 )
 
-# Sidebar Kontrol Alarm & Navigasi
-st.sidebar.markdown("### ⚙️ Panel Kontrol")
-enable_audio = st.sidebar.checkbox(
-    "🔔 Aktifkan Alarm Suara (EWS)",
-    value=True,
-    help="Memutar suara sirene saat air laut < 0.2m",
-)
-test_alarm = st.sidebar.checkbox(
-    "🧪 Tes Alarm Manual (< 0.2m)", value=False, help="Simulasi level air < 0.2m"
-)
-
-# Tentukan jika kondisi kritis dipicu
-is_critical = (realtime_level < 0.2) or test_alarm
-
-# ==========================================
-# EARLY WARNING AUDIO & VISUAL TRIGGER
-# ==========================================
-if is_critical:
-  st.error(
-      "🚨 **PERINGATAN DINI CRITICAL LOW WATER LEVEL!** Level air dibawah"
-      f" threshold safe limit! (Kondisi: {realtime_level:.2f} m)"
-  )
-
-  if enable_audio:
-    # Memutar alarm sirene darurat via Web Audio API JavaScript
-    audio_js = """
-        <script>
-        function playEmergencyAlarm() {
-            var ctx = new (window.AudioContext || window.webkitAudioContext)();
-            var osc = ctx.createOscillator();
-            var gain = ctx.createGain();
-            
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(850, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
-            
-            gain.gain.setValueAtTime(0.3, ctx.currentTime);
-            
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            
-            osc.start();
-            osc.stop(ctx.currentTime + 0.6);
-        }
-        
-        // Loop suara alarm setiap 800ms
-        setInterval(playEmergencyAlarm, 800);
-        </script>
-        """
-    components.html(audio_js, height=0, width=0)
-
-# Dashboard Layout Standard
+# Render Header & Cards
 st.markdown(
     f"""
-<div class="main-header" style="border-left: 8px solid {'#ef4444' if is_critical else '#38bdf8'};">
+<div class="main-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <h1>🌊 Smart Sea Water Level Monitoring</h1>
-            <p>📍 Stasiun Intake Area PLTGU Grati — S7°38.659' E113°01.641'</p>
+            <h1>🌊 Smart Sea Water Level Monitoring & ML Analytics</h1>
+            <p>📍 <strong>Stasiun Monitoring Intake Area PLTGU Grati</strong> — S7°38.659' E113°01.641'</p>
         </div>
-        <div>
-            <span class="badge-success" style="background-color: {'#ef4444' if is_critical else '#10b981'}; color: #fff;">
-                {'🚨 CRITICAL WARNING' if is_critical else '🟢 NORMAL STATUS'}
-            </span>
+        <div style="text-align: right;">
+            <span class="badge-success">🟢 REALTIME ACTIVE</span><br>
+            <small style="color: #94a3b8; font-size: 0.95rem;">Sync: {now.strftime('%H:%M:%S WIB')} (Auto 60s)</small>
         </div>
     </div>
 </div>
@@ -952,34 +945,36 @@ st.markdown(
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Waktu", f"{now.strftime('%H:%M')} WIB")
-m2.metric(
-    "Sea Level Realtime",
-    f"{realtime_level:.2f} m",
-    delta="- SURUT KRITIS" if is_critical else None,
-    delta_color="inverse",
-)
+m2.metric("Sea Level Realtime", f"{realtime_level:.2f} m")
 m3.metric("Prediksi ML Model", f"{ml_level:.2f} m")
 m4.metric("Akurasi AI Model", f"{r2_score_val * 100:.1f}%")
 
-# Plotly Curve
+# Plotly Section
+selected_date = st.sidebar.date_input(
+    "Pilih Tanggal September 2026:",
+    value=datetime.date(2026, 9, current_day),
+    min_value=datetime.date(2026, 9, 1),
+    max_value=datetime.date(2026, 9, 30),
+)
+
+df_plot = df[(df['Day'] == selected_date.day)]
 fig = go.Figure()
 fig.add_trace(
     go.Scatter(
-        x=df['Timestamp'][:24],
-        y=df['Sea_Level_m'][:24],
+        x=df_plot['Timestamp'],
+        y=df_plot['Sea_Level_m'],
         mode='lines+markers',
-        name='Sea Level (m)',
+        name='BMKG Baseline',
     )
 )
-
-# Threshold Line 0.2m
-fig.add_hline(
-    y=0.2,
-    line_dash="dash",
-    line_color="red",
-    annotation_text="Critical Threshold (0.2m)",
-    annotation_position="bottom right",
+fig.add_trace(
+    go.Scatter(
+        x=df_plot['Timestamp'],
+        y=df_plot['ML_Predicted_Sea_Level_m'],
+        mode='lines',
+        name='AI Prediction',
+    )
 )
+fig.update_layout(template='plotly_dark', height=400)
 
-fig.update_layout(template='plotly_dark', height=380)
 st.plotly_chart(fig, use_container_width=True)
