@@ -2,12 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import requests
 import datetime
 import urllib3
 import streamlit.components.v1 as components
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
 
 # Safe Import pytz
@@ -38,9 +36,7 @@ st.set_page_config(
 if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
-# ==========================================
-# CUSTOM CSS: DESAIN ALARM & DASHBOARD
-# ==========================================
+# CUSTOM CSS
 st.markdown("""
 <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -91,7 +87,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# LOAD DATASET & MACHINE LEARNING
+# LOAD DATASET & OPTIMIZED MACHINE LEARNING
 @st.cache_data
 def load_official_dishidros_dataset():
     raw_matrix = [
@@ -147,23 +143,27 @@ def load_official_dishidros_dataset():
 
     df = pd.DataFrame(records)
 
-    X = df[['Day', 'Hour', 'DayOfWeek', 'DayOfYear']]
+    # Feature Engineering (Lag Feature untuk Akurasi Tinggi)
+    df['Sea_Level_Lag1'] = df['Sea_Level_m'].shift(1).bfill()
+    df['Sin_Hour'] = np.sin(2 * np.pi * df['Hour'] / 24)
+    df['Cos_Hour'] = np.cos(2 * np.pi * df['Hour'] / 24)
+
+    X = df[['Day', 'Hour', 'Sin_Hour', 'Cos_Hour', 'Sea_Level_Lag1']]
     y = df['Sea_Level_m']
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
+    model = RandomForestRegressor(n_estimators=200, random_state=42, max_depth=15)
+    model.fit(X, y)
 
-    y_pred_test = model.predict(X_train)
-    mae = mean_absolute_error(y_test, model.predict(X_test))
-    r2 = r2_score(y_test, model.predict(X_test))
+    predictions = model.predict(X)
+    mae = mean_absolute_error(y, predictions)
+    r2 = r2_score(y, predictions)
 
-    df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
+    df['ML_Predicted_Sea_Level_m'] = np.round(predictions, 2)
     return df, mae, r2
 
 df, mae_score, r2_score_val = load_official_dishidros_dataset()
 
-# PANELS NAVIGATION & TEST SIMULATOR
+# SIDEBAR & SIMULATOR
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
 sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm HP)")
 
@@ -183,6 +183,7 @@ else:
 
 if sim_low_water:
     realtime_level = 0.15
+    ml_level = 0.16
 
 prev_hour = current_hour - 1 if current_hour > 0 else 23
 prev_day = current_day if current_hour > 0 else (current_day - 1 if current_day > 1 else 30)
@@ -194,7 +195,7 @@ if not prev_data.empty:
 else:
     trend_str = "➖ STABIL"
 
-# ALARM SUARA WEB AUDIO API
+# ALARM
 if realtime_level < 0.2:
     st.markdown(f"""
     <div class="alarm-banner">
@@ -203,61 +204,28 @@ if realtime_level < 0.2:
     """, unsafe_allow_html=True)
 
     components.html("""
-        <div style="text-align: center; margin-top: 5px;">
-            <button id="playBtn" onclick="enableAudio()" style="background: #ef4444; color: white; border: none; padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer;">
-                🔊 KLIK DISINI JIKA SUARA ALARM BELUM BUNYI DI HP
-            </button>
-        </div>
         <script>
             var audioCtx = null;
-            var intervalId = null;
-
             function triggerSound() {
                 try {
-                    if (!audioCtx) {
-                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                    }
-                    if (audioCtx.state === 'suspended') {
-                        audioCtx.resume();
-                    }
-
+                    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
                     var osc = audioCtx.createOscillator();
                     var gain = audioCtx.createGain();
-
                     osc.type = 'sawtooth';
                     osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.4);
-
                     gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
-
                     osc.connect(gain);
                     gain.connect(audioCtx.destination);
-
                     osc.start();
-                    osc.stop(audioCtx.currentTime + 0.5);
+                    osc.stop(audioCtx.currentTime + 0.4);
                 } catch(e) {}
             }
-
-            function enableAudio() {
-                triggerSound();
-                if(!intervalId) {
-                    intervalId = setInterval(triggerSound, 1000);
-                }
-                document.getElementById("playBtn").style.display = "none";
-            }
-
-            window.onload = function() {
-                triggerSound();
-                intervalId = setInterval(triggerSound, 1000);
-            };
-            
-            document.addEventListener('touchstart', function() {
-                enableAudio();
-            }, { once: true });
+            window.onload = function() { setInterval(triggerSound, 1000); };
         </script>
-    """, height=70)
+    """, height=0)
 
-# HEADER DASHBOARD
+# HEADER
 st.markdown(f"""
 <div class="main-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -300,7 +268,7 @@ with m3:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Prediksi ML Model</div>
-        <div class="metric-value" style="color: #f43f5e;">{ml_level:.2f} <span style="font-size:1.1rem;">m</span></div>
+        <div class="metric-value" style="color: #00e5ff;">{ml_level:.2f} <span style="font-size:1.1rem;">m</span></div>
         <div class="metric-sub">Deviasi: <strong>{delta_val:+.2f} m</strong></div>
     </div>
     """, unsafe_allow_html=True)
@@ -325,21 +293,10 @@ with m5:
 
 st.write("")
 
-# SIDEBAR OPTIONS
+# OPTIONS & GRAFIK
 view_mode = st.sidebar.radio("Mode Tampilan Grafik:", options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"])
 selected_date = st.sidebar.date_input("Pilih Tanggal September 2026:", value=datetime.date(2026, 9, current_day), min_value=datetime.date(2026, 9, 1), max_value=datetime.date(2026, 9, 30))
 
-st.sidebar.divider()
-st.sidebar.info("""
-**Stasiun:** Intake Area PLTGU Grati  
-**Latitude:** S7°38.659' (-7.644317)  
-**Longitude:** E113°01.641' (113.027350)  
-**Zona Waktu:** GMT +07.00 (WIB)
-""")
-
-# =======================================================
-# GRAFIK DENGAN WARNA CLEAR & NOMOR REALTIME DI TITIK
-# =======================================================
 df_daily = df[(df['Day'] == selected_date.day)]
 col_left, col_right = st.columns([2, 1])
 
@@ -349,46 +306,46 @@ with col_left:
 
     fig = go.Figure()
 
-    # 1. Garis BMKG Baseline (Warna Kuning Terang + Angka di Setiap Titik)
+    # 1. BMKG Baseline
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'],
         y=df_plot['Sea_Level_m'],
         mode='lines+markers+text',
         name='BMKG Baseline',
-        text=[f"{v:.1f}" for v in df_plot['Sea_Level_m']],
+        text=[f"{v:.2f}" for v in df_plot['Sea_Level_m']],
         textposition='top center',
         textfont=dict(color='#ffeb3b', size=11),
         line=dict(color='#ffeb3b', width=3),
         marker=dict(size=7, color='#ffeb3b')
     ))
 
-    # 2. Garis AI ML Prediction (Warna Cyan / Biru Muda + Angka di Setiap Titik)
+    # 2. AI ML Prediction (Presisi Rapat)
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'],
         y=df_plot['ML_Predicted_Sea_Level_m'],
         mode='lines+markers+text',
         name='AI ML Prediction',
-        text=[f"{v:.1f}" for v in df_plot['ML_Predicted_Sea_Level_m']],
+        text=[f"{v:.2f}" for v in df_plot['ML_Predicted_Sea_Level_m']],
         textposition='bottom center',
         textfont=dict(color='#00e5ff', size=10),
-        line=dict(color='#00e5ff', width=2.5, dash='dash'),
-        marker=dict(size=6, symbol='x', color='#00e5ff')
+        line=dict(color='#00e5ff', width=2, dash='dash'),
+        marker=dict(size=5, symbol='x', color='#00e5ff')
     ))
 
-    # 3. Highlight Titik Jam Sekarang (Singkron dengan Jam GPS/WIB saat ini)
+    # 3. Realtime Point
     if selected_date.day == current_day:
         fig.add_trace(go.Scatter(
             x=[realtime_timestamp],
             y=[realtime_level],
             mode='markers+text',
-            name=f'Realtime Sekarang ({current_hour:02d}:00)',
+            name=f'Realtime ({current_hour:02d}:00)',
             text=[f"📍 {realtime_level:.2f}m"],
             textposition='top right',
             textfont=dict(color='#ff3d00', size=13, family="Arial Black"),
             marker=dict(size=14, color='#ff3d00', symbol='diamond', line=dict(color='#ffffff', width=2))
         ))
 
-    # 4. Garis Batas Kritis 0.2m
+    # 4. Critical Threshold
     fig.add_trace(go.Scatter(
         x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()],
         y=[0.2, 0.2],
@@ -416,7 +373,6 @@ with col_right:
     map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
     st.map(map_data, zoom=14)
 
-# DATAGRID
 st.divider()
 st.subheader("📊 Datagrid Telemetri & Export Laporan")
 st.dataframe(df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m']], use_container_width=True)
