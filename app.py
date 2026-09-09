@@ -363,17 +363,49 @@ with col_right:
     lon_dec = 113.027350
 
     if folium_installed:
-        m = folium.Map(location=[lat_dec, lon_dec], zoom_start=15, tiles="CartoDB dark_matter")
-        folium.Marker(
-            [lat_dec, lon_dec],
-            popup="Titik Sensor: S7°38.659' E113°01.641'",
-            tooltip="📍 Intake PLTGU Grati (S7°38.659' E113°01.641')",
-            icon=folium.Icon(color="red", icon="bolt", prefix="fa")
+        # Basemap Satelit High-Definition Esri
+        m = folium.Map(
+            location=[lat_dec, lon_dec], 
+            zoom_start=16, 
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri World Imagery"
+        )
+        
+        # Area Lingkaran Radar Intake (Glow Effect)
+        folium.Circle(
+            location=[lat_dec, lon_dec],
+            radius=120,
+            color='#00f2fe',
+            fill=True,
+            fill_color='#00f2fe',
+            fill_opacity=0.25,
+            weight=2
         ).add_to(m)
+
+        # Pin Marker Pusat Sensor
+        folium.CircleMarker(
+            location=[lat_dec, lon_dec],
+            radius=8,
+            color='#ffffff',
+            fill=True,
+            fill_color='#ff0055',
+            fill_opacity=1.0,
+            weight=3,
+            popup=folium.Popup(f"""
+                <div style="font-family: Arial, sans-serif; width: 180px; color: #000;">
+                    <b style="color: #0284c7;">Stasiun Intake PLTGU</b><br>
+                    <b>Lat:</b> S7°38.659'<br>
+                    <b>Lon:</b> E113°01.641'<br>
+                    <b>Status:</b> <span style="color:green;">● Active</span>
+                </div>
+            """, max_width=200),
+            tooltip="📍 Intake Area PLTGU Grati"
+        ).add_to(m)
+
         st_folium(m, width="100%", height=380)
     else:
         map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
-        st.map(map_data, zoom=15)
+        st.map(map_data, zoom=16)
 
 # ==========================================
 # DATA GRID & EXPORT
@@ -400,7 +432,6 @@ with tab_export:
     )
 
     excel_buffer = io.BytesIO()
-    # Fallback aman jika openpyxl belum terinstal di sistem
     try:
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Data_S7_38_659_E113_01_641', index=False)
