@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import requests
-import io
 import datetime
 import urllib3
 import streamlit.components.v1 as components
@@ -26,19 +25,11 @@ try:
 except Exception:
     st_autorefresh_installed = False
 
-# Safe Import Folium Map
-try:
-    import folium
-    from streamlit_folium import st_folium
-    folium_installed = True
-except Exception:
-    folium_installed = False
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Config Halaman
 st.set_page_config(
-    page_title="Smart Hydro Monitoring - S7°38.659' E113°01.641'",
+    page_title="Smart Sea Water Level Monitoring",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -48,7 +39,7 @@ if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
 # ==========================================
-# CUSTOM CSS: LARGER FONTS & ALARM STYLING
+# CUSTOM CSS: DESAIN ALARM & DASHBOARD
 # ==========================================
 st.markdown("""
 <style>
@@ -63,8 +54,8 @@ st.markdown("""
         box-shadow: 0 4px 20px rgba(0,0,0,0.4);
         margin-bottom: 25px;
     }
-    .main-header h1 { color: #38bdf8; font-weight: 800; margin: 0; font-size: 2.3rem !important; }
-    .main-header p { color: #cbd5e1; margin: 8px 0 0 0; font-size: 1.2rem !important; }
+    .main-header h1 { color: #38bdf8; font-weight: 800; margin: 0; font-size: 2.1rem !important; }
+    .main-header p { color: #cbd5e1; margin: 8px 0 0 0; font-size: 1.1rem !important; }
 
     .metric-card {
         background: rgba(30, 41, 59, 0.85);
@@ -75,13 +66,13 @@ st.markdown("""
         text-align: center;
         box-shadow: 0 4px 14px rgba(0,0,0,0.3);
     }
-    .metric-title { font-size: 1rem !important; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.8px; }
-    .metric-value { font-size: 2.2rem !important; font-weight: 800; color: #f8fafc; margin: 8px 0; }
-    .metric-sub { font-size: 1rem !important; color: #38bdf8; font-weight: 600; }
+    .metric-title { font-size: 0.95rem !important; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.8px; }
+    .metric-value { font-size: 2.1rem !important; font-weight: 800; color: #f8fafc; margin: 8px 0; }
+    .metric-sub { font-size: 0.95rem !important; color: #38bdf8; font-weight: 600; }
     
-    .badge-success { background-color: rgba(16, 185, 129, 0.25); color: #34d399; border: 1px solid #10b981; padding: 4px 12px; border-radius: 8px; font-size: 1rem !important; font-weight: 700; }
+    .badge-success { background-color: rgba(16, 185, 129, 0.25); color: #34d399; border: 1px solid #10b981; padding: 4px 12px; border-radius: 8px; font-size: 0.95rem !important; font-weight: 700; }
 
-    /* Flashing Alarm Banner for Level < 0.2m */
+    /* Animation Kedip Merah Alarm */
     @keyframes blink {
         0% { background-color: #7f1d1d; opacity: 1; }
         50% { background-color: #dc2626; opacity: 0.7; }
@@ -93,7 +84,7 @@ st.markdown("""
         padding: 15px 20px;
         border-radius: 10px;
         font-weight: bold;
-        font-size: 1.3rem;
+        font-size: 1.2rem;
         text-align: center;
         margin-bottom: 20px;
         border: 2px solid #ef4444;
@@ -101,20 +92,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 1. FETCH STATUS SERVER
-@st.cache_data(ttl=120)
-def fetch_bmkg_maritim_data():
-    url = "https://maritim.bmkg.go.id/"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    try:
-        response = requests.get(url, headers=headers, timeout=5, verify=False)
-        if response.status_code == 200:
-            return True, "Active (BMKG Gateway)"
-    except Exception:
-        pass
-    return True, "Active (DISHIDROSAL / Verified)"
-
-# 2. GENERATE OFFICIAL DATASET
+# LOAD DATASET & MACHINE LEARNING
 @st.cache_data
 def load_official_dishidros_dataset():
     raw_matrix = [
@@ -154,16 +132,15 @@ def load_official_dishidros_dataset():
     for day_idx in range(30):
         day_num = day_idx + 1
         for hour_idx in range(24):
-            hour_num = hour_idx
             val = raw_matrix[day_idx][hour_idx]
-            dt = datetime.datetime(2026, 9, day_num, hour_num, 0, 0)
+            dt = datetime.datetime(2026, 9, day_num, hour_idx, 0, 0)
             records.append({
                 'Timestamp': dt,
                 'Latitude': "S7°38.659'",
                 'Longitude': "E113°01.641'",
                 'Month': 9,
                 'Day': day_num,
-                'Hour': hour_num,
+                'Hour': hour_idx,
                 'DayOfWeek': dt.weekday(),
                 'DayOfYear': dt.timetuple().tm_yday,
                 'Sea_Level_m': val
@@ -186,9 +163,13 @@ def load_official_dishidros_dataset():
     return df, mae, r2
 
 df, mae_score, r2_score_val = load_official_dishidros_dataset()
-bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
-# REALTIME LOGIC
+# PANELS NAVIGATION & TEST SIMULATOR
+st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
+
+# Opsi Simulasi untuk Tes Alarm Langsung
+sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm HP)")
+
 current_day = now.day if now.month == 9 else 9
 current_hour = now.hour
 
@@ -201,6 +182,10 @@ else:
     realtime_level = df.loc[0, 'Sea_Level_m']
     ml_level = df.loc[0, 'ML_Predicted_Sea_Level_m']
 
+# Jika tombol simulasi dicentang, paksa level menjadi 0.15m
+if sim_low_water:
+    realtime_level = 0.15
+
 prev_hour = current_hour - 1 if current_hour > 0 else 23
 prev_day = current_day if current_hour > 0 else (current_day - 1 if current_day > 1 else 30)
 prev_data = df[(df['Day'] == prev_day) & (df['Hour'] == prev_hour)]
@@ -211,75 +196,79 @@ if not prev_data.empty:
 else:
     trend_str = "➖ STABIL"
 
-# ==========================================
-# TELEGRAM ALARM FUNCTION (UNTUK HP)
-# ==========================================
-def send_telegram_alert(bot_token, chat_id, level):
-    message = f"🚨 *PERINGATAN LEVEL AIR LAUT CRITICAL!*\n\n" \
-              f"📍 *Stasiun*: Intake PLTGU Grati\n" \
-              f"🌊 *Realtime Level*: `{level:.2f} m` (< 0.20 m)\n" \
-              f"⏰ *Waktu*: {now.strftime('%d-%m-%Y %H:%M:%S WIB')}\n\n" \
-              f"⚠️ *Tindakan*: Segera evaluasi unit intake pump!"
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload, timeout=3)
-    except Exception:
-        pass
-
-# SIDEBAR CONFIGURATION FOR ALERTS
-st.sidebar.markdown("### 🚨 Pengaturan Notifikasi Alarm HP")
-enable_tg = st.sidebar.checkbox("Aktifkan Telegram Alert HP")
-bot_token = st.sidebar.text_input("Bot Token Telegram", type="password", help="Dapatkan dari @BotFather")
-chat_id = st.sidebar.text_input("Chat ID Telegram", help="Dapatkan dari @userinfobot")
-
-# Simulation Checkbox for Testing
-st.sidebar.divider()
-sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm)")
-if sim_low_water:
-    realtime_level = 0.15
-
-# ==========================================
-# ALARM TRIGGER LOGIC (< 0.2 m)
-# ==========================================
+# =======================================================
+# ALARM SUARA (WEB AUDIO API): BERBUNYI DI HP & LAPTOP
+# =======================================================
 if realtime_level < 0.2:
-    # 1. Visual Banner Display
+    # 1. Banner visual merah berkedip
     st.markdown(f"""
     <div class="alarm-banner">
         🚨 PERINGATAN CRITICAL: LEVEL AIR SANGAT LOW ({realtime_level:.2f} m < 0.20 m)!
     </div>
     """, unsafe_allow_html=True)
 
-    # 2. Audio Siren via Web Audio API (Laptop Sound)
+    # 2. Modul Audio HTML5 & JS (Bisa berbunyi di Chrome Mobile / HP & Laptop)
     components.html("""
+        <div style="text-align: center; margin-top: 5px;">
+            <button id="playBtn" onclick="enableAudio()" style="background: #ef4444; color: white; border: none; padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer;">
+                🔊 KLIK DISINI JIKA SUARA ALARM BELUM BUNYI DI HP
+            </button>
+        </div>
+
         <script>
-            function playAlarm() {
-                var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                var osc = audioCtx.createOscillator();
-                var gain = audioCtx.createGain();
-                
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.5);
-                
-                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-                
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                
-                osc.start();
-                osc.stop(audioCtx.currentTime + 1.0);
+            var audioCtx = null;
+            var intervalId = null;
+
+            function triggerSound() {
+                try {
+                    if (!audioCtx) {
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    var osc = audioCtx.createOscillator();
+                    var gain = audioCtx.createGain();
+
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime); // Frekuensi Nada A5
+                    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.4);
+
+                    gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.5);
+                } catch(e) {
+                    console.log("Audio waiting user touch");
+                }
             }
-            playAlarm();
-            setInterval(playAlarm, 1500);
+
+            function enableAudio() {
+                triggerSound();
+                if(!intervalId) {
+                    intervalId = setInterval(triggerSound, 1000);
+                }
+                document.getElementById("playBtn").style.display = "none";
+            }
+
+            // Mencoba membunyikan otomatis saat dibuka
+            window.onload = function() {
+                triggerSound();
+                intervalId = setInterval(triggerSound, 1000);
+            };
+            
+            // Trigger tambahan saat layar HP disentuh
+            document.addEventListener('touchstart', function() {
+                enableAudio();
+            }, { once: true });
         </script>
-    """, height=0)
+    """, height=70)
 
-    # 3. Telegram Notification (HP Notification)
-    if enable_tg and bot_token and chat_id:
-        send_telegram_alert(bot_token, chat_id, realtime_level)
-
-# HEADER SECTION
+# HEADER DASHBOARD
 st.markdown(f"""
 <div class="main-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -295,7 +284,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# METRICS DASHBOARD
+# METRICS
 m1, m2, m3, m4, m5 = st.columns(5)
 
 with m1:
@@ -340,15 +329,14 @@ with m5:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Koordinat GPS</div>
-        <div class="metric-value" style="color: #a855f7; font-size:1.5rem; margin-top:8px;">S7°38.659'</div>
+        <div class="metric-value" style="color: #a855f7; font-size:1.4rem; margin-top:8px;">S7°38.659'</div>
         <div class="metric-sub">E113°01.641'</div>
     </div>
     """, unsafe_allow_html=True)
 
 st.write("")
 
-# SIDEBAR NAVIGATION
-st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
+# SIDEBAR OPTIONS
 view_mode = st.sidebar.radio("Mode Tampilan Grafik:", options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"])
 selected_date = st.sidebar.date_input("Pilih Tanggal September 2026:", value=datetime.date(2026, 9, current_day), min_value=datetime.date(2026, 9, 1), max_value=datetime.date(2026, 9, 30))
 
@@ -360,7 +348,7 @@ st.sidebar.info("""
 **Zona Waktu:** GMT +07.00 (WIB)
 """)
 
-# CHART & MAP
+# GRAFIK & PETA STREAMLIT NATIVE (ANTI BLANK)
 df_daily = df[(df['Day'] == selected_date.day)]
 col_left, col_right = st.columns([2, 1])
 
@@ -389,13 +377,12 @@ with col_left:
 with col_right:
     st.subheader("🗺️ Geospatial Intake Sensor")
     lat_dec, lon_dec = -7.644317, 113.027350
-    if folium_installed:
-        m = folium.Map(location=[lat_dec, lon_dec], zoom_start=16, tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri World Imagery")
-        folium.Circle(location=[lat_dec, lon_dec], radius=120, color='#00f2fe', fill=True, fill_color='#00f2fe', fill_opacity=0.25, weight=2).add_to(m)
-        folium.CircleMarker(location=[lat_dec, lon_dec], radius=9, color='#ffffff', fill=True, fill_color='#ff0055', fill_opacity=1.0, weight=3).add_to(m)
-        st_folium(m, width="100%", height=420)
+    
+    # Menampilkan Peta Native Streamlit
+    map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
+    st.map(map_data, zoom=14)
 
-# DATA GRID & EXPORT
+# DATAGRID
 st.divider()
 st.subheader("📊 Datagrid Telemetri & Export Laporan")
 st.dataframe(df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m']], use_container_width=True)
