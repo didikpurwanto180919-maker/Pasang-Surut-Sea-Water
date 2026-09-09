@@ -29,7 +29,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Config Halaman
 st.set_page_config(
-    page_title="Pasang Surut Sea Water Level Probolinggo 2026",
+    page_title="Pasang Surut Air Laut - Probolinggo (S7°38.659' E113°01.641')",
     page_icon="🌊",
     layout="wide"
 )
@@ -37,7 +37,10 @@ st.set_page_config(
 if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
+# Header Aplikasi dengan Koordinat Eksplisit
 st.title("🌊 Prediksi & Real-Time Data Pasang Surut Air Laut Probolinggo")
+st.caption("📍 **Lokasi Koordinat Target:** S7°38.659' E113°01.641' (Pelabuhan/Pesisir Probolinggo)")
+
 st.markdown("""
 Aplikasi ini menampilkan **Data Real-Time Jam Sekarang (WIB)** yang diperbarui otomatis setiap **60 detik**, dikombinasikan dengan status **BMKG Maritim** dan model **Machine Learning**.
 """)
@@ -85,6 +88,8 @@ def generate_and_train():
 
     df = pd.DataFrame({
         'Timestamp': time_range,
+        'Latitude': "S7°38.659'",
+        'Longitude': "E113°01.641'",
         'Year': time_range.year,
         'Month': time_range.month,
         'Day': time_range.day,
@@ -108,7 +113,7 @@ def generate_and_train():
 df = generate_and_train()
 bmkg_status, bmkg_msg = fetch_bmkg_maritim_data()
 
-# 3. REALTIME PANEL (WIB)
+# 3. REALTIME PANEL (WIB & KOORDINAT)
 current_month = now.month
 current_day = now.day
 current_hour = now.hour
@@ -124,17 +129,17 @@ else:
 
 st.info(f"⏱️ **Status Real-Time:** Terakhir diperbarui jam **{now.strftime('%H:%M:%S WIB')}** (Auto-refresh setiap 60 detik)")
 
-rc1, rc2, rc3, rc4 = st.columns(4)
+# Layout Card Metric Tambahan
+rc1, rc2, rc3, rc4, rc5 = st.columns(5)
 rc1.metric("Waktu Sekarang", now.strftime("%Y-%m-%d %H:%M WIB"))
-rc2.metric("Sea Level Real-Time", f"{realtime_level:.2f} m")
-rc3.metric("Prediksi ML Sea Level", f"{ml_level:.2f} m", delta=f"{round(ml_level - realtime_level, 2)} m")
-rc4.metric("Status Koneksi BMKG", f"🟢 {bmkg_msg}" if bmkg_status else "🔴 Offline")
+rc2.metric("Koordinat Lokasi", "S7°38.659' E113°01.641'")
+rc3.metric("Sea Level Real-Time", f"{realtime_level:.2f} m")
+rc4.metric("Prediksi ML Sea Level", f"{ml_level:.2f} m", delta=f"{round(ml_level - realtime_level, 2)} m")
+rc5.metric("Status Koneksi BMKG", f"🟢 {bmkg_msg}" if bmkg_status else "🔴 Offline")
 
 st.divider()
 
-# ==========================================
-# 4. KONTROL SIDEBAR (HARIAN & PER JAM)
-# ==========================================
+# 4. KONTROL SIDEBAR
 st.sidebar.header("⚙️ Kontrol Grafik")
 
 view_mode = st.sidebar.radio(
@@ -149,17 +154,14 @@ selected_date = st.sidebar.date_input(
     max_value=datetime.date(2026, 12, 31)
 )
 
-# Filter Data Sesuai Tanggal
 df_daily = df[(df['Timestamp'].dt.date == selected_date)]
 
-# ==========================================
 # 5. GRAFIK VISUALISASI HARIAN / PER JAM
-# ==========================================
 if view_mode == "Mode Harian (24 Jam)":
-    st.subheader(f"📈 Grafik Pasang Surut Harian ({selected_date.strftime('%d %B %Y')})")
+    st.subheader(f"📈 Grafik Pasang Surut Harian ({selected_date.strftime('%d %B %Y')}) — S7°38.659' E113°01.641'")
     df_plot = df_daily
 else:
-    st.subheader(f"⏱️ Grafik Pasang Surut Per Jam (Detail 6 Jam - {selected_date.strftime('%d %B %Y')})")
+    st.subheader(f"⏱️ Grafik Pasang Surut Per Jam ({selected_date.strftime('%d %B %Y')}) — S7°38.659' E113°01.641'")
     selected_hour_start = st.sidebar.slider("Pilih Jam Awal:", 0, 18, current_hour if current_hour <= 18 else 18)
     df_plot = df_daily[(df_daily['Hour'] >= selected_hour_start) & (df_daily['Hour'] <= selected_hour_start + 6)]
 
@@ -169,13 +171,11 @@ ax.plot(df_plot['Timestamp'], df_plot['Sea_Level_m'], marker='o', label='Simulat
 ax.plot(df_plot['Timestamp'], df_plot['ML_Predicted_Sea_Level_m'], marker='x', label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1.5)
 ax.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
 
-# Penanda Garis Waktu Sekarang (jika tanggal yang dipilih adalah hari ini)
 if selected_date == datetime.date(2026, current_month, current_day):
     current_timestamp = pd.to_datetime(f"2026-{current_month:02d}-{current_day:02d} {current_hour:02d}:00:00")
     if current_timestamp in df_plot['Timestamp'].values:
         ax.axvline(x=current_timestamp, color='purple', linestyle='-', linewidth=2.5, label=f'Waktu Sekarang ({now.strftime("%H:%M WIB")})')
 
-# Format Sumbu X agar Menampilkan Jam dengan Jelas
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 ax.xaxis.set_major_locator(mdates.HourLocator(interval=1 if view_mode != "Mode Harian (24 Jam)" else 2))
 
@@ -187,9 +187,7 @@ plt.xticks(rotation=0)
 
 st.pyplot(fig)
 
-# ==========================================
 # 6. TABEL DATA & UNDUH FILE
-# ==========================================
 st.divider()
 st.subheader("📊 Tabel Data & Unduh File")
 
@@ -201,9 +199,9 @@ with tab1:
 with tab2:
     col_dl1, col_dl2 = st.columns(2)
     csv_data = df.to_csv(index=False).encode('utf-8')
-    col_dl1.download_button("📥 Download Data Full (CSV)", csv_data, 'sea_water_level_probolinggo_2026.csv', 'text/csv')
+    col_dl1.download_button("📥 Download Data Full (CSV)", csv_data, 'sea_water_level_probolinggo_S7_38_659_E113_01_641.csv', 'text/csv')
     
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Full_Data_2026', index=False)
-    col_dl2.download_button("📥 Download Data Full (Excel)", buffer.getvalue(), 'sea_water_level_probolinggo_2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        df.to_excel(writer, sheet_name='Data_S7_38_659_E113_01_641', index=False)
+    col_dl2.download_button("📥 Download Data Full (Excel)", buffer.getvalue(), 'sea_water_level_probolinggo_S7_38_659_E113_01_641.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
