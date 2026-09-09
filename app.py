@@ -72,7 +72,6 @@ st.markdown("""
     
     .badge-success { background-color: rgba(16, 185, 129, 0.25); color: #34d399; border: 1px solid #10b981; padding: 4px 12px; border-radius: 8px; font-size: 0.95rem !important; font-weight: 700; }
 
-    /* Animation Kedip Merah Alarm */
     @keyframes blink {
         0% { background-color: #7f1d1d; opacity: 1; }
         50% { background-color: #dc2626; opacity: 0.7; }
@@ -155,16 +154,16 @@ def load_official_dishidros_dataset():
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
-    y_pred_test = model.predict(X_test)
-    mae = mean_absolute_error(y_test, y_pred_test)
-    r2 = r2_score(y_test, y_pred_test)
+    y_pred_test = model.predict(X_train)
+    mae = mean_absolute_error(y_test, model.predict(X_test))
+    r2 = r2_score(y_test, model.predict(X_test))
 
     df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
     return df, mae, r2
 
 df, mae_score, r2_score_val = load_official_dishidros_dataset()
 
-# SIDEBAR NAVIGASI & TEST ALARM
+# PANELS NAVIGATION & TEST SIMULATOR
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
 sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm HP)")
 
@@ -176,11 +175,12 @@ current_data = df[(df['Day'] == current_day) & (df['Hour'] == current_hour)]
 if not current_data.empty:
     realtime_level = current_data['Sea_Level_m'].values[0]
     ml_level = current_data['ML_Predicted_Sea_Level_m'].values[0]
+    realtime_timestamp = current_data['Timestamp'].values[0]
 else:
     realtime_level = df.loc[0, 'Sea_Level_m']
     ml_level = df.loc[0, 'ML_Predicted_Sea_Level_m']
+    realtime_timestamp = df.loc[0, 'Timestamp']
 
-# Paksa air menjadi 0.15m jika simulasi dinyalakan
 if sim_low_water:
     realtime_level = 0.15
 
@@ -194,9 +194,7 @@ if not prev_data.empty:
 else:
     trend_str = "➖ STABIL"
 
-# =======================================================
-# TRIGGER ALARM AUDIO (WEB AUDIO API FOR HP & LAPTOP)
-# =======================================================
+# ALARM SUARA WEB AUDIO API
 if realtime_level < 0.2:
     st.markdown(f"""
     <div class="alarm-banner">
@@ -210,7 +208,6 @@ if realtime_level < 0.2:
                 🔊 KLIK DISINI JIKA SUARA ALARM BELUM BUNYI DI HP
             </button>
         </div>
-
         <script>
             var audioCtx = null;
             var intervalId = null;
@@ -238,9 +235,7 @@ if realtime_level < 0.2:
 
                     osc.start();
                     osc.stop(audioCtx.currentTime + 0.5);
-                } catch(e) {
-                    console.log("Audio waiting user touch");
-                }
+                } catch(e) {}
             }
 
             function enableAudio() {
@@ -305,7 +300,7 @@ with m3:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Prediksi ML Model</div>
-        <div class="metric-value" style="color: #f8fafc;">{ml_level:.2f} <span style="font-size:1.1rem;">m</span></div>
+        <div class="metric-value" style="color: #f43f5e;">{ml_level:.2f} <span style="font-size:1.1rem;">m</span></div>
         <div class="metric-sub">Deviasi: <strong>{delta_val:+.2f} m</strong></div>
     </div>
     """, unsafe_allow_html=True)
@@ -342,9 +337,9 @@ st.sidebar.info("""
 **Zona Waktu:** GMT +07.00 (WIB)
 """)
 
-# ==========================================
-# GRAFIK HIGH-CONTRAST & PETA STREAMLIT
-# ==========================================
+# =======================================================
+# GRAFIK DENGAN WARNA CLEAR & NOMOR REALTIME DI TITIK
+# =======================================================
 df_daily = df[(df['Day'] == selected_date.day)]
 col_left, col_right = st.columns([2, 1])
 
@@ -352,73 +347,66 @@ with col_left:
     st.subheader(f"📈 Hydro-Dynamic Curve ({selected_date.strftime('%d September 2026')})")
     df_plot = df_daily if view_mode == "Mode Harian (24 Jam)" else df_daily[(df_daily['Hour'] >= current_hour) & (df_daily['Hour'] <= current_hour + 6)]
 
-    # Filter Angka: HANYA DITAMPILKAN PADA JAM SEKARANG (REALTIME)
-    is_today = (selected_date.day == current_day)
-    
-    text_realtime = [
-        f"{val}m" if (is_today and row['Hour'] == current_hour) else "" 
-        for val, row in zip(df_plot['Sea_Level_m'], df_plot['Hour'])
-    ]
-    
-    text_ml = [
-        f"{val}m" if (is_today and row['Hour'] == current_hour) else "" 
-        for val, row in zip(df_plot['ML_Predicted_Sea_Level_m'], df_plot['Hour'])
-    ]
-
     fig = go.Figure()
 
-    # 1. Baseline Realtime: Cyan Terang
+    # 1. Garis BMKG Baseline (Warna Kuning Terang + Angka di Setiap Titik)
     fig.add_trace(go.Scatter(
-        x=df_plot['Timestamp'], 
-        y=df_plot['Sea_Level_m'], 
-        mode='lines+markers+text', 
-        name='BMKG Hydro Baseline',
-        text=text_realtime,
+        x=df_plot['Timestamp'],
+        y=df_plot['Sea_Level_m'],
+        mode='lines+markers+text',
+        name='BMKG Baseline',
+        text=[f"{v:.1f}" for v in df_plot['Sea_Level_m']],
         textposition='top center',
-        textfont=dict(color='#00d2ff', size=13, family="Arial Black"),
-        line=dict(color='#00d2ff', width=3),
-        marker=dict(size=8, color='#00d2ff')
+        textfont=dict(color='#ffeb3b', size=11),
+        line=dict(color='#ffeb3b', width=3),
+        marker=dict(size=7, color='#ffeb3b')
     ))
 
-    # 2. Prediksi ML: Kuning Terang
+    # 2. Garis AI ML Prediction (Warna Cyan / Biru Muda + Angka di Setiap Titik)
     fig.add_trace(go.Scatter(
-        x=df_plot['Timestamp'], 
-        y=df_plot['ML_Predicted_Sea_Level_m'], 
-        mode='lines+markers+text', 
+        x=df_plot['Timestamp'],
+        y=df_plot['ML_Predicted_Sea_Level_m'],
+        mode='lines+markers+text',
         name='AI ML Prediction',
-        text=text_ml,
+        text=[f"{v:.1f}" for v in df_plot['ML_Predicted_Sea_Level_m']],
         textposition='bottom center',
-        textfont=dict(color='#facc15', size=12, family="Arial Black"),
-        line=dict(color='#facc15', width=2, dash='dash'),
-        marker=dict(size=7, symbol='x', color='#facc15')
+        textfont=dict(color='#00e5ff', size=10),
+        line=dict(color='#00e5ff', width=2.5, dash='dash'),
+        marker=dict(size=6, symbol='x', color='#00e5ff')
     ))
 
-    # 3. Threshold Critical Line 0.2m
+    # 3. Highlight Titik Jam Sekarang (Singkron dengan Jam GPS/WIB saat ini)
+    if selected_date.day == current_day:
+        fig.add_trace(go.Scatter(
+            x=[realtime_timestamp],
+            y=[realtime_level],
+            mode='markers+text',
+            name=f'Realtime Sekarang ({current_hour:02d}:00)',
+            text=[f"📍 {realtime_level:.2f}m"],
+            textposition='top right',
+            textfont=dict(color='#ff3d00', size=13, family="Arial Black"),
+            marker=dict(size=14, color='#ff3d00', symbol='diamond', line=dict(color='#ffffff', width=2))
+        ))
+
+    # 4. Garis Batas Kritis 0.2m
     fig.add_trace(go.Scatter(
-        x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()], 
-        y=[0.2, 0.2], 
-        mode='lines', 
-        name='Critical Limit (0.2m)', 
-        line=dict(color='#ff0055', width=2.5, dash='dot')
+        x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()],
+        y=[0.2, 0.2],
+        mode='lines',
+        name='Batas Critical (0.2m)',
+        line=dict(color='#ff1744', width=2, dash='dot')
     ))
 
     fig.update_layout(
         template='plotly_dark',
-        paper_bgcolor='rgba(15, 23, 42, 0.6)',
-        plot_bgcolor='rgba(15, 23, 42, 0.6)',
+        paper_bgcolor='rgba(15, 23, 42, 0.5)',
+        plot_bgcolor='rgba(15, 23, 42, 0.5)',
         margin=dict(l=20, r=20, t=30, b=20),
         height=450,
-        font=dict(size=13, color='#f8fafc'),
-        legend=dict(
-            orientation="h", 
-            yanchor="bottom", 
-            y=1.02, 
-            xanchor="right", 
-            x=1,
-            font=dict(size=12)
-        ),
-        xaxis=dict(gridcolor='#334155', showgrid=True, zeroline=False),
-        yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True, zeroline=False)
+        font=dict(size=13),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(gridcolor='#334155', showgrid=True),
+        yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True, range=[-0.1, 3.1])
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -428,7 +416,7 @@ with col_right:
     map_data = pd.DataFrame({'lat': [lat_dec], 'lon': [lon_dec]})
     st.map(map_data, zoom=14)
 
-# DATAGRID & EXPORT
+# DATAGRID
 st.divider()
 st.subheader("📊 Datagrid Telemetri & Export Laporan")
 st.dataframe(df_plot[['Timestamp', 'Latitude', 'Longitude', 'Sea_Level_m', 'ML_Predicted_Sea_Level_m']], use_container_width=True)
