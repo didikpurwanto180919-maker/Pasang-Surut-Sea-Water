@@ -342,7 +342,9 @@ st.sidebar.info("""
 **Zona Waktu:** GMT +07.00 (WIB)
 """)
 
+# ==========================================
 # GRAFIK HIGH-CONTRAST & PETA STREAMLIT
+# ==========================================
 df_daily = df[(df['Day'] == selected_date.day)]
 col_left, col_right = st.columns([2, 1])
 
@@ -350,30 +352,43 @@ with col_left:
     st.subheader(f"📈 Hydro-Dynamic Curve ({selected_date.strftime('%d September 2026')})")
     df_plot = df_daily if view_mode == "Mode Harian (24 Jam)" else df_daily[(df_daily['Hour'] >= current_hour) & (df_daily['Hour'] <= current_hour + 6)]
 
+    # Filter Angka: HANYA DITAMPILKAN PADA JAM SEKARANG (REALTIME)
+    is_today = (selected_date.day == current_day)
+    
+    text_realtime = [
+        f"{val}m" if (is_today and row['Hour'] == current_hour) else "" 
+        for val, row in zip(df_plot['Sea_Level_m'], df_plot['Hour'])
+    ]
+    
+    text_ml = [
+        f"{val}m" if (is_today and row['Hour'] == current_hour) else "" 
+        for val, row in zip(df_plot['ML_Predicted_Sea_Level_m'], df_plot['Hour'])
+    ]
+
     fig = go.Figure()
 
-    # 1. Baseline Realtime: Cyan Terang + Angka Nilai di Atas Titik
+    # 1. Baseline Realtime: Cyan Terang
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'], 
         y=df_plot['Sea_Level_m'], 
         mode='lines+markers+text', 
         name='BMKG Hydro Baseline',
-        text=df_plot['Sea_Level_m'].astype(str) + 'm',
+        text=text_realtime,
         textposition='top center',
-        textfont=dict(color='#00d2ff', size=11, family="Arial Black"),
+        textfont=dict(color='#00d2ff', size=13, family="Arial Black"),
         line=dict(color='#00d2ff', width=3),
         marker=dict(size=8, color='#00d2ff')
     ))
 
-    # 2. Prediksi ML: Kuning Terang + Angka Nilai di Bawah Titik
+    # 2. Prediksi ML: Kuning Terang
     fig.add_trace(go.Scatter(
         x=df_plot['Timestamp'], 
         y=df_plot['ML_Predicted_Sea_Level_m'], 
         mode='lines+markers+text', 
         name='AI ML Prediction',
-        text=df_plot['ML_Predicted_Sea_Level_m'].astype(str) + 'm',
+        text=text_ml,
         textposition='bottom center',
-        textfont=dict(color='#facc15', size=10),
+        textfont=dict(color='#facc15', size=12, family="Arial Black"),
         line=dict(color='#facc15', width=2, dash='dash'),
         marker=dict(size=7, symbol='x', color='#facc15')
     ))
