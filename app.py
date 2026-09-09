@@ -1,15 +1,24 @@
+import streamlit as st
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 
-# 1. PARAMETER KONSTANTA HARMONIK (Dari Tabel Pasang Surut Probolinggo)
-# So = Mean Sea Level (MSL) dalam meter (410 cm = 4.10 m)
-S0 = 4.10 
+# Konfigurasi Halaman Streamlit
+st.set_page_config(
+    page_title="Prediksi Water Intake PLTGU / Pasang Surut",
+    page_icon="🌊",
+    layout="wide"
+)
 
-# Data Amplitudo (A) dalam meter dan Beda Fase (g) dalam derajat
-# Amplitudo diubah dari cm ke meter (dibagi 100)
+st.title("🌊 Aplikasi Prediksi Pasang Surut & Water Intake PLTGU")
+st.write("Lokasi Acuan: **Stasiun Probolinggo**")
+
+# 1. PARAMETER HARMONIK (Data Probolinggo)
+S0 = 4.10  # Mean Sea Level (m)
+
 harmonics = {
-    'M2':  {'A': 0.20, 'g': 247.0, 'speed': 28.9841042}, # Kecepatan sudut (deg/jam)
+    'M2':  {'A': 0.20, 'g': 247.0, 'speed': 28.9841042},
     'S2':  {'A': 0.16, 'g': 288.0, 'speed': 30.0000000},
     'N2':  {'A': 0.05, 'g': 231.0, 'speed': 28.4397295},
     'K2':  {'A': 0.04, 'g': 288.0, 'speed': 30.0821373},
@@ -20,55 +29,70 @@ harmonics = {
     'MS4': {'A': 0.01, 'g': 220.0, 'speed': 58.9841042}
 }
 
-def hitung_tinggi_air(jam_ke_t):
-    """
-    Menghitung tinggi muka air (m) pada jam ke-t dari titik acuan awal
-    """
-    h = S0
+# Sidebar Input User
+st.sidebar.header("⚙️ Pengaturan Prediksi")
+tanggal_mulai = st.sidebar.date_input("Tanggal Mulai", datetime.now())
+jam_mulai = st.sidebar.time_input("Jam Mulai", datetime.now().time())
+durasi_hari = st.sidebar.slider("Durasi Prediksi (Hari)", min_value=1, max_value=7, value=2)
+
+# Menggabungkan Date & Time
+start_datetime = datetime.combine(tanggal_mulai, jam_mulai)
+total_jam = durasi_hari * 24
+
+# 2. PROSES PERHITUNGAN
+waktu_list = []
+tinggi_list = []
+
+for h in range(total_jam):
+    current_time = start_datetime + timedelta(hours=h)
+    
+    # Formula Pasut
+    height = S0
     for constituent, data in harmonics.items():
         A = data['A']
-        g = np.radians(data['g']) # Konversi fase ke radian
-        speed = np.radians(data['speed']) # Konversi kecepatan sudut ke radian/jam
+        g = np.radians(data['g'])
+        speed = np.radians(data['speed'])
+        height += A * np.cos(speed * h - g)
         
-        # Komponen gelombang pasut
-        h += A * np.cos(speed * jam_ke_t - g)
-    return h
+    waktu_list.append(current_time)
+    tinggi_list.append(height)
 
-# 2. SIMULASI PREDIKSI
-# Tentukan rentang waktu simulasi
-start_date = datetime(2026, 9, 9, 0, 0) # Waktu mulai (YYYY, MM, DD, HH, MM)
-hours_to_predict = 48                    # Durasi prediksi (48 jam / 2 hari)
+# DataFrame Hasil
+df = pd.DataFrame({
+    'Waktu': waktu_list,
+    'Tinggi Air (m)': tinggi_list
+})
 
-data_prediksi = []
+# 3. TAMPILKAN METRIK KUNCI
+col1, col2, col3 = st.columns(3)
+col1.metric("Pasang Maksimum", f"{df['Tinggi Air (m)'].max():.2f} m")
+col2.metric("Rata-Rata (MSL)", f"{S0:.2f} m")
+col3.metric("Surut Terendah", f"{df['Tinggi Air (m)'].min():.2f} m")
 
-for hour in range(hours_to_predict):
-    current_time = start_date + timedelta(hours=hour)
-    height = hitung_tinggi_air(hour)
-    data_prediksi.append({
-        'Waktu (WIB)': current_time.strftime('%Y-%m-%d %H:%M'),
-        'Tinggi Air (m)': round(height, 2)
-    })
+st.divider()
 
-# 3. TAMPILKAN HASIL PREDIKSI
-df = pd.DataFrame(data_prediksi)
-print("--- PREDIKSI PASANG SURUT PROBOLINGGO ---")
-print(df.head(10)) # Menampilkan 10 jam pertama
+# 4. TAMPILKAN GRAFIK
+st.subheader("📊 Grafik Prediksi Elevasi Air")
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(df['Waktu'], df['Tinggi Air (m)'], color='#1f77b4', linewidth=2, label='Tinggi Air')
+ax.axhline(y=S0, color='red', linestyle='--', label=f'MSL ({S0} m)')
+ax.set_ylabel("Tinggi (m)")
+ax.grid(True, linestyle=':', alpha=0.6)
+ax.legend()
+plt.xticks(rotation=30)
+plt.tight_layout()
 
-# 4. MEMASUKKAN GRAFIK (OPTIONAL)
-try:
-    import matplotlib.pyplot as plt
-    
-    plt.figure(figsize=(12, 5))
-    plt.plot(df['Waktu (WIB)'], df['Tinggi Air (m)'], color='blue', marker='o', markersize=3)
-    plt.axhline(y=S0, color='red', linestyle='--', label=f'MSL / S0 ({S0} m)')
-    
-    plt.xticks(rotation=45)
-    plt.title('Prediksi Elevasi Pasang Surut Stasiun Probolinggo')
-    plt.xlabel('Waktu')
-    plt.ylabel('Tinggi Air (m)')
-    plt.grid(True, linestyle=':', alpha=0.6)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-except ImportError:
-    print("\nInstall 'matplotlib' jika ingin menampilkan grafik visual.")
+st.pyplot(fig)
+
+# 5. TABEL DATA & DOWNLOAD
+st.subheader("📋 Tabel Data Prediksi")
+st.dataframe(df, use_container_width=True)
+
+# Button Download CSV
+csv = df.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="📥 Download Data CSV",
+    data=csv,
+    file_name=f"prediksi_pasut_{tanggal_mulai}.csv",
+    mime="text/csv"
+)
