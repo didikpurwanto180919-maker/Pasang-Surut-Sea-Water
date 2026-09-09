@@ -1,11 +1,11 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
 import datetime
 import urllib3
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
 import requests
 from bs4 import BeautifulSoup
+import streamlit as st
 import streamlit.components.v1 as components
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -144,13 +144,13 @@ def load_official_dishidros_dataset():
     ]
 
     records = []
-    # PERBAIKAN: Generate data penuh untuk Bulan September, Oktober, November, dan Desember 2026
+    # Generate data untuk Bulan September s.d. Desember 2026
     start_date = datetime.datetime(2026, 9, 1)
     end_date = datetime.datetime(2026, 12, 31)
     current_dt = start_date
 
     while current_dt <= end_date:
-        day_idx = (current_dt.day - 1) % 30
+        day_idx = (current_dt.day - 1) % len(raw_matrix_probolinggo)
         for hour_idx in range(24):
             dt = datetime.datetime(current_dt.year, current_dt.month, current_dt.day, hour_idx, 0, 0)
             val_prob = raw_matrix_probolinggo[day_idx][hour_idx]
@@ -193,10 +193,9 @@ df, mae_score, r2_score_val = load_official_dishidros_dataset()
 # SIDEBAR & SIMULATOR
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
 
-# PERBAIKAN: Perluas jangkauan tanggal dari 1 September hingga 31 Desember 2026
 selected_date = st.sidebar.date_input(
     "🗓️ Pilih Tanggal Monitoring:",
-    value=datetime.date(2026, now.month if now.year == 2026 and 9 <= now.month <= 12 else 9, now.day),
+    value=datetime.date(2026, now.month if now.year == 2026 and 9 <= now.month <= 12 else 9, now.day if 1 <= now.day <= 30 else 1),
     min_value=datetime.date(2026, 9, 1),
     max_value=datetime.date(2026, 12, 31)
 )
@@ -205,7 +204,7 @@ sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm H
 st.sidebar.markdown("---")
 
 badge_color = "#34d399" if "ONLINE" in live_status else "#f59e0b"
-st.sidebar.markdown(f"🔗 **Data Resmi BMKG Status:**\n<span style='background-color: rgba(16, 185, 129, 0.2); color: {badge_color}; padding: 4px 8px; border-radius: 6px; font-weight: bold;'>{live_status}</span>\n\n[https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo](https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo)", unsafe_allow_html=True)
+st.sidebar.markdown(f"🔗 **Data Resmi BMKG Status:**\n<span style='background-color: rgba(16, 185, 129, 0.2); color: {badge_color}; padding: 4px 8px; border-radius: 6px; font-weight: bold;'>{live_status}</span>\n\n[bmkg.go.id](https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo)", unsafe_allow_html=True)
 
 current_month = selected_date.month
 current_day = selected_date.day
@@ -337,10 +336,9 @@ with m5:
 
 st.write("")
 
-# GRAFIK PER JAM PER HARI (24 TANGGA JAM)
+# GRAFIK PER JAM PER HARI
 col_left, col_right = st.columns([2.2, 0.8])
 
-# PERBAIKAN: Ambil data 24 jam penuh untuk Bulan dan Hari yang dipilih
 df_daily = df[(df['Month'] == selected_date.month) & (df['Day'] == selected_date.day)].sort_values(by='Hour')
 
 with col_left:
@@ -353,7 +351,7 @@ with col_left:
         x=df_daily['Hour_Label'],
         y=df_daily['Sea_Level_Probolinggo'],
         mode='lines+markers+text',
-        name='BMKG Probolinggo (07°44\'10.79"S 113°12\'59.64"E)',
+        name='BMKG Probolinggo',
         text=[f"{v:.2f}" for v in df_daily['Sea_Level_Probolinggo']],
         textposition='top center',
         textfont=dict(color='#ffeb3b', size=11, family="Arial Bold"),
@@ -374,7 +372,7 @@ with col_left:
         marker=dict(size=5, symbol='x', color='#00e5ff')
     ))
 
-    # 3. Realtime Marker Point pada Jam Berjalan (jika memilih hari ini)
+    # 3. Realtime Marker Point
     if selected_date.day == now.day and selected_date.month == now.month:
         current_hour_label = f"{current_hour:02d}:00"
         fig.add_trace(go.Scatter(
@@ -391,7 +389,7 @@ with col_left:
     # 4. Critical Level Line
     fig.add_trace(go.Scatter(
         x=df_daily['Hour_Label'],
-        y=[0.2] * 24,
+        y=[0.2] * len(df_daily),
         mode='lines',
         name='Batas Critical (0.2m)',
         line=dict(color='#ff1744', width=2, dash='dot')
