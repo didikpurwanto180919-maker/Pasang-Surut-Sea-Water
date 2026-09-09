@@ -10,19 +10,22 @@ from sklearn.preprocessing import MinMaxScaler
 
 st.set_page_config(page_title="Pasut Probolinggo - Pasuruan", layout="wide")
 
-st.title("🌊 Prediksi vs Aktual Level Air Laut (Sesuai Tabel BIG)")
+st.title("🌊 Dashboard Harian Level Air Laut")
 st.subheader("Lokasi: Probolinggo / Pasuruan (S 07° 44' E 113° 12') - GMT+07.00")
 
-# 1. PAKSA WAKTU REALTIME WIB
+# 1. WAKTU REALTIME
 wib_tz = pytz.timezone('Asia/Jakarta')
 now_wib = datetime.now(wib_tz).replace(tzinfo=None)
 
-st.sidebar.markdown(f"**Waktu Realtime Saat Ini:**\n`{now_wib.strftime('%Y-%m-%d %H:%M:%S WIB')}`")
-if st.sidebar.button("🔄 Refresh Data Realtime"):
+# 2. SIDEBAR: FITUR PILIH TANGGAL HARIAN
+st.sidebar.header("🗓️ Kontrol Dashboard")
+selected_date = st.sidebar.date_input("Pilih Tanggal Visualisasi:", value=now_wib.date())
+
+st.sidebar.markdown(f"**Waktu Realtime:**\n`{now_wib.strftime('%Y-%m-%d %H:%M:%S WIB')}`")
+if st.sidebar.button("🔄 Refresh Data"):
     st.rerun()
 
-# 2. TABEL AKTUR RESMI BIG (SEPTEMBER 2026: TANGGAL 1 - 30, JAM 1 - 24)
-# Data diekstrak langsung dari Tabel Resmi BIG/DISHIDROS
+# 3. TABEL AKTUAL RESMI BIG (SEPTEMBER 2026)
 tabel_big_sep_2026 = {
     1:  [2.4, 2.3, 2.0, 1.6, 1.2, 0.9, 0.9, 1.0, 1.2, 1.6, 1.9, 2.1, 2.2, 2.1, 1.8, 1.5, 1.2, 1.0, 0.9, 1.0, 1.3, 1.7, 2.1, 2.3],
     2:  [2.5, 2.4, 2.2, 1.8, 1.5, 1.1, 0.9, 0.9, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.1, 1.3, 1.6, 1.9, 2.2],
@@ -56,20 +59,26 @@ tabel_big_sep_2026 = {
     30: [2.6, 2.3, 1.8, 1.3, 0.9, 0.6, 0.5, 0.7, 1.0, 1.4, 1.7, 2.0, 2.0, 2.0, 1.7, 1.5, 1.3, 1.2, 1.2, 1.4, 1.8, 2.2, 2.5, 2.7]
 }
 
-# 3. CONVERT TABEL MENGJADI DATAFRAME RENTANG WAKTU STREAMLIT
+# 4. FILTER DATA KHUSUS HARIAN
 records = []
 for day, hours in tabel_big_sep_2026.items():
     for hour_idx, val in enumerate(hours):
         dt = pd.Timestamp(year=2026, month=9, day=day, hour=hour_idx)
         records.append({'datetime': dt, 'water_level': val})
 
-df_big = pd.DataFrame(records).set_index('datetime')
+df_all = pd.DataFrame(records).set_index('datetime')
 
-# 4. PREPROCESSING & TRAINING MODEL MACHINE LEARNING
+# Filter berdasarkan tanggal yang dipilih di sidebar
+start_day = pd.Timestamp(selected_date)
+end_day = start_day + pd.Timedelta(hours=23, minutes=59)
+
+df_daily = df_all[(df_all.index >= start_day) & (df_all.index <= end_day)]
+
+# 5. MODEL MACHINE LEARNING UNTUK SKALA HARIAN
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(df_big[['water_level']])
+scaled_data = scaler.fit_transform(df_all[['water_level']])
 
-LOOKBACK = 12
+LOOKBACK = 6
 
 def create_features(data, lookback):
     X, y = [], []
@@ -79,55 +88,53 @@ def create_features(data, lookback):
     return np.array(X), np.array(y)
 
 X, y = create_features(scaled_data, LOOKBACK)
-
-# Split berdasarkan Jam Sekarang
-current_idx = len(df_big[df_big.index <= now_wib]) - LOOKBACK
-if current_idx <= 0:
-    current_idx = 24 # Fallback
-
-X_train, X_test = X[:current_idx], X[current_idx:]
-y_train, y_test = y[:current_idx], y[current_idx:]
-
 model = RandomForestRegressor(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
+model.fit(X, y)
 
-# Prediksi ML
-predictions = model.predict(X_test)
-predictions_actual = scaler.inverse_transform(predictions.reshape(-1, 1))
+# Prediksi untuk hari yang dipilih
+scaled_daily = scaler.transform(df_daily[['water_level']])
+X_daily = []
+for i in range(len(scaled_daily)):
+    idx = df_all.index.get_loc(df_daily.index[i])
+    if idx >= LOOKBACK:
+        X_daily.append(scaled_data[idx-LOOKBACK:idx, 0])
+    else:
+        X_daily.append(scaled_data[:LOOKBACK, 0])
 
-test_timestamps = df_big.index[current_idx + LOOKBACK:]
+X_daily = np.array(X_daily)
+pred_daily = model.predict(X_daily)
+pred_daily_actual = scaler.inverse_transform(pred_daily.reshape(-1, 1))
 
-# 5. VISUALISASI STREAMLIT
+# 6. VISUALISASI DASBOR HARIAN (Sumbu X Sangat Rapi & Jelas)
 fig, ax = plt.subplots(figsize=(12, 5))
 
-# Observasi Aktual Tabel BIG
-ax.plot(df_big.index[:current_idx + LOOKBACK], df_big['water_level'][:current_idx + LOOKBACK], 
-        label="Aktual Resmi (Tabel BIG 2026)", color="blue", linewidth=1.8)
+ax.plot(df_daily.index, df_daily['water_level'], label="Aktual Resmi (Tabel BIG)", color="blue", linewidth=2, marker='o', markersize=4)
+ax.plot(df_daily.index, pred_daily_actual, label="Prediksi ML (Random Forest)", color="red", linestyle="--", linewidth=1.8)
 
-# Prediksi Machine Learning
-ax.plot(test_timestamps, predictions_actual, 
-        label="Prediksi ML (Random Forest)", color="red", linestyle="--", linewidth=1.8)
+# Garis Penanda Jika Hari Ini yang Dipilih
+if selected_date == now_wib.date():
+    ax.axvline(x=now_wib, color='green', linestyle=':', linewidth=2, label=f'Saat Ini ({now_wib.strftime("%H:%M WIB")})')
 
-# Garis Penanda Saat Ini
-ax.axvline(x=now_wib, color='green', linestyle=':', linewidth=2, 
-           label=f'Saat Ini ({now_wib.strftime("%d-%b %H:%M WIB")})')
-
-ax.xaxis.set_major_locator(mdates.HourLocator(interval=6))
-ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%b %H:%M'))
+# Format Sumbu-X Per Jam
+ax.xaxis.set_major_locator(mdates.HourLocator(interval=1)) # Tampilkan setiap jam (00:00 - 23:00)
+ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 
 ax.set_ylabel("Tinggi Muka Air (Meter)")
-ax.set_xlabel("Waktu (WIB)")
-ax.legend(loc="upper left")
+ax.set_xlabel(f"Jam (WIB) - Tanggal {selected_date.strftime('%d %B %Y')}")
+ax.legend(loc="upper right")
 ax.grid(True, linestyle=":", alpha=0.6)
 
-plt.xticks(rotation=30)
+plt.xticks(rotation=45)
 st.pyplot(fig)
 
-# 6. RINGKASAN METRIK REALTIME
-curr_level = df_big.loc[df_big.index <= now_wib, 'water_level'].iloc[-1]
-next_level = predictions_actual[0][0]
+# 7. METRIK RINGKASAN HARIAN
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Pasang Maksimum Hari Ini", f"{df_daily['water_level'].max():.2f} m")
+col2.metric("Surut Minimum Hari Ini", f"{df_daily['water_level'].min():.2f} m")
+col3.metric("Rata-rata Muka Air (MSL)", f"{df_daily['water_level'].mean():.2f} m")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Level Air Laut Saat Ini (BIG)", f"{curr_level:.2f} m")
-col2.metric("Prediksi 1 Jam Ke Depan", f"{next_level:.2f} m")
-col3.metric("Kondisi Saat Ini", "Air Laut Surut (Rendah)" if curr_level < 0.5 else "Normal / Pasang")
+if selected_date == now_wib.date():
+    curr_val = df_all.loc[df_all.index <= now_wib, 'water_level'].iloc[-1]
+    col4.metric("Level Jam Ini", f"{curr_val:.2f} m")
+else:
+    col4.metric("Total Data", f"{len(df_daily)} Jam")
