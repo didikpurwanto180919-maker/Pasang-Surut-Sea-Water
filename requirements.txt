@@ -1,6 +1,9 @@
 streamlit
+streamlit-autorefresh
 pandas
 numpy
 matplotlib
 scikit-learn
 openpyxl
+requests
+beautifulsoup4
