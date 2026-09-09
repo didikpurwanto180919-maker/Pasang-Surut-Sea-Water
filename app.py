@@ -1,161 +1,123 @@
-import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from datetime import datetime, timedelta
-import pytz
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
 
-# Page Configuration
-st.set_page_config(
-    page_title="Monitoring Pasut Realtime - GPS S07°38.659' E113°01.641'",
-    page_icon="🌊",
-    layout="wide"
-)
+# ==========================================
+# 1. MEMBUAT DATASET PASANG SURUT 2026
+# ==========================================
+print("1. Menggenerate data pasang surut 2026...")
 
-# Timezone Setup
-wib_tz = pytz.timezone('Asia/Jakarta')
-now_time = datetime.now(wib_tz).replace(tzinfo=None)
+# Rentang waktu sepanjang tahun 2026 (per jam)
+time_range = pd.date_range(start='2026-01-01 00:00:00', end='2026-12-31 23:00:00', freq='h')
 
-# Auto-refresh every 60 seconds
-try:
-    from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=60000, key="pasut_autorefresh_gps")
-except ImportError:
-    pass
+# Simulasi komponen pasang surut (Komponen Utama M2, S2, K1, O1)
+# Menggunakan formula gelombang sinusoidal pasang surut diurnal/semidiurnal
+hours = np.arange(len(time_range))
+tide_m2 = 0.8 * np.cos(2 * np.pi * hours / 12.42)          # Semidiurnal utama
+tide_s2 = 0.3 * np.cos(2 * np.pi * hours / 12.00)          # Semidiurnal matahari
+tide_k1 = 0.9 * np.cos(2 * np.pi * hours / 23.93 + 0.5)    # Diurnal utama
+tide_o1 = 0.5 * np.cos(2 * np.pi * hours / 25.82 - 0.3)    # Diurnal bulan
 
-st.title("🌊 Sistem Monitoring Pasang Surut Realtime")
+# Mean Sea Level (MSL) rata-rata Probolinggo (~1.4 m)
+msl = 1.4
 
-st.markdown("""
-> 📍 **Lokasi Pemantau (GPS):** `S 07° 38.659' E 113° 01.641'`  
-> 🗺️ **Wilayah:** Pesisir Selat Madura (Pasuruan - Probolinggo)  
-> 📊 **Acuan Datum:** Chart Datum Low Water Level (LWL) - Standard Dishidros TNI-AL / BMKG  
-""")
+# Menghitung Sea Water Level dasar
+sea_level_simulated = msl + tide_m2 + tide_s2 + tide_k1 + tide_o1
 
-# -------------------------------------------------------------------
-# DATA MATRIKS PASUT TERVALIDASI DARI TABEL DISHIDROS
-# -------------------------------------------------------------------
-tide_matrix_dishidros = {
-    8:  [1.7, 1.6, 1.6, 1.7, 1.9, 2.2, 2.4, 2.6, 2.5, 2.2, 1.8, 1.3, 0.8, 0.5, 0.2, 0.2, 0.5, 0.9, 1.4, 1.8, 2.2, 2.3, 2.2, 2.0],
-    9:  [1.8, 1.5, 1.4, 1.4, 1.6, 1.9, 2.3, 2.6, 2.7, 2.6, 2.3, 1.8, 1.2, 0.7, 0.3, 0.1, 0.2, 0.6, 1.1, 1.6, 2.1, 2.4, 2.4, 2.2],
-    10: [1.9, 1.6, 1.3, 1.2, 1.3, 1.5, 1.9, 2.4, 2.7, 2.8, 2.6, 2.2, 1.6, 1.0, 0.5, 0.2, 0.2, 0.4, 0.8, 1.4, 1.9, 2.3, 2.5, 2.4]
-}
+# Menambahkan noise acak kecil (variasi cuaca/angin)
+np.random.seed(42)
+noise = np.random.normal(0, 0.05, len(time_range))
+sea_level_simulated += noise
 
-@st.cache_data
-def build_base_dataframe():
-    times = []
-    elevations = []
+# Membuat DataFrame
+df = pd.DataFrame({
+    'Timestamp': time_range,
+    'Year': time_range.year,
+    'Month': time_range.month,
+    'Day': time_range.day,
+    'Hour': time_range.hour,
+    'DayOfWeek': time_range.dayofweek,
+    'DayOfYear': time_range.dayofyear,
+    'Sea_Level_m': np.round(sea_level_simulated, 2)
+})
+
+# ==========================================
+# 2. PELATIHAN MODEL MACHINE LEARNING
+# ==========================================
+print("2. Melatih model Machine Learning (Random Forest)...")
+
+# Memisahkan Fitur (X) dan Target (y)
+X = df[['Month', 'Day', 'Hour', 'DayOfWeek', 'DayOfYear']]
+y = df['Sea_Level_m']
+
+# Split data latih (80%) dan data uji (20%)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Inisialisasi dan pelatihan model
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Prediksi pada data uji untuk evaluasi
+y_pred = model.predict(X_test)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+r2 = r2_score(y_test, y_pred)
+
+print(f"   - Evaluation RMSE : {rmse:.4f} m")
+print(f"   - Evaluation R2   : {r2:.4f}")
+
+# Memasukkan hasil prediksi model ke dalam DataFrame utama
+df['ML_Predicted_Sea_Level_m'] = np.round(model.predict(X), 2)
+
+# ==========================================
+# 3. EKSPOR KE CSV & EXCEL
+# ==========================================
+print("3. Mengekspor data ke format CSV dan Excel...")
+
+# Ekspor ke CSV
+csv_filename = 'sea_water_level_probolinggo_2026.csv'
+df.to_csv(csv_filename, index=False)
+print(f"   - File CSV berhasil dibuat: {csv_filename}")
+
+# Ekspor ke Excel
+excel_filename = 'sea_water_level_probolinggo_2026.xlsx'
+with pd.ExcelWriter(excel_filename, engine='openpyxl') as writer:
+    df.to_excel(writer, sheet_name='Full_Data_2026', index=False)
     
-    for day, row_vals in tide_matrix_dishidros.items():
-        base_dt = datetime(2026, 9, day, 0, 0, 0)
-        for col_idx, val in enumerate(row_vals):
-            dt = base_dt + timedelta(hours=col_idx)
-            times.append(dt)
-            elevations.append(val)
-            
-    df = pd.DataFrame({"Waktu": times, "Elevasi (m)": elevations}).sort_values("Waktu").reset_index(drop=True)
-    return df
+    # Membuat sheet ringkasan bulanan (Min, Max, Rata-rata)
+    monthly_summary = df.groupby('Month')['Sea_Level_m'].agg(
+        Max_High_Tide_m='max',
+        Min_Low_Tide_m='min',
+        Average_Level_m='mean'
+    ).reset_index()
+    monthly_summary.to_excel(writer, sheet_name='Monthly_Summary', index=False)
 
-def get_realtime_tide_data(df, current_dt):
-    # Safely bound lookup within available data range
-    if current_dt <= df["Waktu"].iloc[0]:
-        return df.iloc[0]["Elevasi (m)"], df.iloc[0], df.iloc[0]
-    elif current_dt >= df["Waktu"].iloc[-1]:
-        return df.iloc[-1]["Elevasi (m)"], df.iloc[-1], df.iloc[-1]
-    
-    prev_r = df[df["Waktu"] <= current_dt].iloc[-1]
-    next_r = df[df["Waktu"] > current_dt].iloc[0]
-    
-    if prev_r["Waktu"] == next_r["Waktu"]:
-        cur_elev = prev_r["Elevasi (m)"]
-    else:
-        t_diff = (next_r["Waktu"] - prev_r["Waktu"]).total_seconds()
-        c_diff = (current_dt - prev_r["Waktu"]).total_seconds()
-        cur_elev = prev_r["Elevasi (m)"] + (c_diff / t_diff) * (next_r["Elevasi (m)"] - prev_r["Elevasi (m)"])
-        
-    return cur_elev, prev_r, next_r
+print(f"   - File Excel berhasil dibuat: {excel_filename}")
 
-df_tide = build_base_dataframe()
-current_val, prev_point, next_point = get_realtime_tide_data(df_tide, now_time)
+# ==========================================
+# 4. VISUALISASI GRAFIK
+# ==========================================
+print("4. Menampilkan grafik pasang surut...")
 
-# -------------------------------------------------------------------
-# METRICS DISPLAY
-# -------------------------------------------------------------------
-c1, c2, c3, c4 = st.columns(4)
-c1.metric(
-    label=f"Muka Air GPS ({now_time.strftime('%H:%M:%S WIB')})", 
-    value=f"{current_val:.2f} m"
-)
-c2.metric("Pasang Tertinggi (HWL)", f"{df_tide['Elevasi (m)'].max():.1f} m")
-c3.metric("Rata-Rata Muka Air (MSL)", f"{df_tide['Elevasi (m)'].mean():.2f} m")
-c4.metric("Surut Terendah (LWL)", f"{df_tide['Elevasi (m)'].min():.1f} m")
+plt.figure(figsize=(15, 6))
 
-st.caption(f"⚡ *Update otomatis aktif. Timestamp lokal: {now_time.strftime('%d %B %Y - %H:%M:%S WIB')}*")
-st.divider()
+# Plot sampel data bulan Januari 2026 agar grafik terlihat detail
+df_january = df[df['Month'] == 1]
 
-# -------------------------------------------------------------------
-# VISUALIZATION
-# -------------------------------------------------------------------
-st.subheader("📈 Kurva Elevasi Air Realtime Sesuai Koordinat Pemantauan")
+plt.plot(df_january['Timestamp'], df_january['Sea_Level_m'], label='Simulated Sea Level', color='navy', alpha=0.7, linewidth=1.5)
+plt.plot(df_january['Timestamp'], df_january['ML_Predicted_Sea_Level_m'], label='ML Predicted Sea Level', color='red', linestyle='--', alpha=0.8, linewidth=1)
 
-fig, ax = plt.subplots(figsize=(14, 5.5))
-
-# Plot tide curve
-ax.plot(df_tide["Waktu"], df_tide["Elevasi (m)"], color="#0077B6", linewidth=2.2, marker="o", markersize=3.5, label="Elevasi Air (Chart Datum / m)")
-
-# Mean Sea Level Line
-msl_val = df_tide['Elevasi (m)'].mean()
-ax.axhline(msl_val, color="red", linestyle="--", alpha=0.6, label=f"MSL ({msl_val:.2f} m)")
-
-# Current Time Marking
-ax.axvline(now_time, color="#D62728", linestyle="-", linewidth=2, label=f"Waktu Sekarang ({now_time.strftime('%H:%M WIB')})")
-ax.plot(now_time, current_val, marker="o", markersize=9, color="#D62728")
-
-# Hourly Data Point Annotations
-for x, y in zip(df_tide["Waktu"], df_tide["Elevasi (m)"]):
-    ax.annotate(
-        f"{y:.1f}",
-        (x, y),
-        textcoords="offset points",
-        xytext=(0, 6),
-        ha='center',
-        fontsize=8,
-        fontweight='bold',
-        color='#03045E'
-    )
-
-# Realtime Marker Tag
-ax.annotate(
-    f"KOORDINAT GPS\nElevasi: {current_val:.2f} m\n({now_time.strftime('%H:%M WIB')})",
-    (now_time, current_val),
-    textcoords="offset points",
-    xytext=(0, -38),
-    ha='center',
-    fontsize=8.5,
-    fontweight='bold',
-    color='#D62728',
-    bbox=dict(boxstyle="round,pad=0.3", fc="#FFFFCC", ec="#D62728", lw=1.5, alpha=0.9)
-)
-
-# Axis & Grid Formatting
-ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
-ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
-ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%b %H:%M"))
-
-ax.set_xlim(datetime(2026, 9, 8, 0, 0), datetime(2026, 9, 10, 23, 59))
-ax.set_ylim(-0.1, df_tide["Elevasi (m)"].max() + 0.4)
-
-ax.set_ylabel("Ketinggian Muka Air / Chart Datum (m)", fontsize=10)
-ax.set_xlabel("Waktu (WIB)", fontsize=10)
-ax.grid(True, which="major", linestyle="--", alpha=0.5)
-ax.legend(loc="upper right")
-plt.xticks(rotation=30)
+plt.title('Prediksi Sea Water Level Probolinggo - Bulan Januari 2026', fontsize=14, fontweight='bold')
+plt.xlabel('Tanggal / Waktu', fontsize=12)
+plt.ylabel('Sea Level (Meter)', fontsize=12)
+plt.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
+plt.grid(True, linestyle='--', alpha=0.5)
+plt.legend(loc='upper right')
 plt.tight_layout()
 
-st.pyplot(fig)
-plt.close(fig)  # Prevents memory accumulation
+# Tampilkan grafik
+plt.show()
 
-# Inspection Expander
-with st.expander("🔍 Detail Rincian Interpolasi Data Saat Ini"):
-    st.write(f"- **Titik Jam Sebelumnya ({prev_point['Waktu'].strftime('%H:%M WIB')}):** {prev_point['Elevasi (m)']} m")
-    st.write(f"- **Titik Jam Berikutnya ({next_point['Waktu'].strftime('%H:%M WIB')}):** {next_point['Elevasi (m)']} m")
-    st.write(f"- **Hasil Interpolasi ({now_time.strftime('%H:%M WIB')}):** `{current_val:.2f} m`")
+print("Proses selesai!")
