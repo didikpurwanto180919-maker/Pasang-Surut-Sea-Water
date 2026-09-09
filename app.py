@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import datetime
-import requests
 import urllib3
 import streamlit.components.v1 as components
 from sklearn.ensemble import RandomForestRegressor
@@ -28,7 +27,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Config Halaman
 st.set_page_config(
-    page_title="Smart Sea Water Level Monitoring & BMKG OFS",
+    page_title="Smart Sea Water Level Monitoring",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -88,22 +87,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# FETCH DATA DARI MARITIM BMKG OFS
-@st.cache_data(ttl=600)
-def fetch_bmkg_ofs_data():
-    """Mengambil data live BMKG OFS / Pelabuhan Probolinggo"""
-    url_probolinggo = "https://maritim.bmkg.go.id/cuaca/pelabuhan/pelabuhan-probolinggo"
-    try:
-        # Mengirim request ke server BMKG
-        res = requests.get(url_probolinggo, timeout=5, verify=False)
-        if res.status_code == 200:
-            st.sidebar.success("✅ Terhubung ke BMKG OFS Live")
-            return True
-    except Exception:
-        st.sidebar.warning("⚠️ Menggunakan Data Cache BMKG (Offline Mode)")
-    return False
-
-# LOAD DATASET MATRIX & TRAIN MODEL ML
+# LOAD DATASET PROBOLINGGO & MACHINE LEARNING
 @st.cache_data
 def load_official_dishidros_dataset():
     # Matrix resmi Dishidros / BMKG Stasiun 39. PROBOLINGGO (07° 44' 10.79" S / 113° 12' 59.64" E)
@@ -153,12 +137,13 @@ def load_official_dishidros_dataset():
                 'Day': day_num,
                 'Hour': hour_idx,
                 'Sea_Level_Probolinggo': val_prob,
+                # Asumsi sensor Intake Grati (variasi dinamis lokal)
                 'Sea_Level_Grati': np.round(val_prob + 0.05 * np.sin(hour_idx), 2)
             })
 
     df = pd.DataFrame(records)
 
-    # Machine Learning
+    # Feature Engineering ML
     df['Sea_Level_Lag1'] = df['Sea_Level_Grati'].shift(1).bfill()
     df['Sin_Hour'] = np.sin(2 * np.pi * df['Hour'] / 24)
     df['Cos_Hour'] = np.cos(2 * np.pi * df['Hour'] / 24)
@@ -176,15 +161,13 @@ def load_official_dishidros_dataset():
     df['ML_Predicted_Sea_Level_m'] = np.round(predictions, 2)
     return df, mae, r2
 
-# Inisialisasi Data
-is_bmkg_online = fetch_bmkg_ofs_data()
 df, mae_score, r2_score_val = load_official_dishidros_dataset()
 
-# SIDEBAR KONTROL
+# SIDEBAR & SIMULATOR
 st.sidebar.markdown("### ⚙️ Panel Kontrol Navigasi")
 sim_low_water = st.sidebar.checkbox("🧪 Simulasi Level Air < 0.2m (Tes Alarm HP)")
 st.sidebar.markdown("---")
-st.sidebar.markdown("🔗 **Sumber BMKG Valid:**\n[maritim.bmkg.go.id/ofs](https://maritim.bmkg.go.id/ofs)")
+st.sidebar.markdown("🔗 **Data Resmi BMKG:**\n[https://maritim.bmkg.go.id/](https://maritim.bmkg.go.id/)")
 
 current_day = now.day if now.month == 9 else 9
 current_hour = now.hour
@@ -206,7 +189,17 @@ if sim_low_water:
     realtime_level = 0.15
     ml_level = 0.16
 
-# ALARM CRITICAL
+prev_hour = current_hour - 1 if current_hour > 0 else 23
+prev_day = current_day if current_hour > 0 else (current_day - 1 if current_day > 1 else 30)
+prev_data = df[(df['Day'] == prev_day) & (df['Hour'] == prev_hour)]
+
+if not prev_data.empty:
+    prev_level = prev_data['Sea_Level_Grati'].values[0]
+    trend_str = "🔻 SURUT" if realtime_level < prev_level else ("🔺 PASANG" if realtime_level > prev_level else "➖ STABIL")
+else:
+    trend_str = "➖ STABIL"
+
+# ALARM
 if realtime_level < 0.2:
     st.markdown(f"""
     <div class="alarm-banner">
@@ -214,90 +207,188 @@ if realtime_level < 0.2:
     </div>
     """, unsafe_allow_html=True)
 
+    components.html("""
+        <script>
+            var audioCtx = null;
+            function triggerSound() {
+                try {
+                    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
+                    var osc = audioCtx.createOscillator();
+                    var gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.4);
+                } catch(e) {}
+            }
+            window.onload = function() { setInterval(triggerSound, 1000); };
+        </script>
+    """, height=0)
+
 # HEADER
 st.markdown(f"""
 <div class="main-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <h1>🌊 Smart Sea Water Level Monitoring & BMKG OFS</h1>
-            <p>📍 Validasi Data <strong>BMKG OFS Probolinggo</strong> (07°44'10.79"S 113°12'59.64"E) vs <strong>Intake PLTGU Grati</strong></p>
+            <h1>🌊 Smart Sea Water Level Monitoring & ML Analytics</h1>
+            <p>📍 <strong>Stasiun Monitoring Intake Area PLTGU Grati</strong> (S7°38.659' E113°01.641') vs <strong>Probolinggo BMKG</strong> (07°44'10.79"S 113°12'59.64"E)</p>
         </div>
         <div style="text-align: right;">
-            <span class="badge-success">🟢 REALTIME BMKG VERIFIED</span><br>
+            <span class="badge-success">🟢 REALTIME ACTIVE</span><br>
             <small style="color: #94a3b8; font-size: 0.95rem;">Sync: {now.strftime('%H:%M:%S WIB')} (Auto 60s)</small>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# METRICS DISPLAY
+# METRICS
 m1, m2, m3, m4, m5 = st.columns(5)
+
 with m1:
-    st.markdown(f"""<div class="metric-card"><div class="metric-title">Waktu Monitoring</div><div class="metric-value">{now.strftime('%H:%M')} <span style="font-size:1.1rem; color:#94a3b8;">WIB</span></div><div class="metric-sub">{current_day} September 2026</div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Waktu Monitoring</div>
+        <div class="metric-value">{now.strftime('%H:%M')} <span style="font-size:1.1rem; color:#94a3b8;">WIB</span></div>
+        <div class="metric-sub">{current_day} September 2026</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with m2:
-    st.markdown(f"""<div class="metric-card"><div class="metric-title">Sea Level Grati Realtime</div><div class="metric-value" style="color: #38bdf8;">{realtime_level:.2f} <span style="font-size:1.1rem;">m</span></div><div class="metric-sub">Intake Channel</div></div>""", unsafe_allow_html=True)
+    color_style = "#ef4444" if realtime_level < 0.2 else "#38bdf8"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Sea Level Grati Realtime</div>
+        <div class="metric-value" style="color: {color_style};">{realtime_level:.2f} <span style="font-size:1.1rem;">m</span></div>
+        <div class="metric-sub">Kondisi: <strong>{trend_str}</strong></div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with m3:
-    st.markdown(f"""<div class="metric-card"><div class="metric-title">BMKG OFS Probolinggo</div><div class="metric-value" style="color: #ffeb3b;">{prob_level:.2f} <span style="font-size:1.1rem;">m</span></div><div class="metric-sub">Valid Stasiun BMKG</div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Probolinggo BMKG</div>
+        <div class="metric-value" style="color: #ffeb3b;">{prob_level:.2f} <span style="font-size:1.1rem;">m</span></div>
+        <div class="metric-sub">07°44'10.79"S 113°12'59.64"E</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with m4:
-    st.markdown(f"""<div class="metric-card"><div class="metric-title">Prediksi ML Model</div><div class="metric-value" style="color: #00e5ff;">{ml_level:.2f} <span style="font-size:1.1rem;">m</span></div><div class="metric-sub">AI Prediction</div></div>""", unsafe_allow_html=True)
+    delta_val = round(ml_level - realtime_level, 2)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Prediksi ML Model</div>
+        <div class="metric-value" style="color: #00e5ff;">{ml_level:.2f} <span style="font-size:1.1rem;">m</span></div>
+        <div class="metric-sub">Deviasi: <strong>{delta_val:+.2f} m</strong></div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with m5:
-    st.markdown(f"""<div class="metric-card"><div class="metric-title">Akurasi Model</div><div class="metric-value" style="color: #10b981;">{r2_score_val*100:.1f}%</div><div class="metric-sub">MAE: {mae_score:.3f} m</div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-title">Akurasi AI Model</div>
+        <div class="metric-value" style="color: #10b981;">{r2_score_val*100:.1f}%</div>
+        <div class="metric-sub">MAE Error: <strong>{mae_score:.3f} m</strong></div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.write("")
 
-# TABEL / GRAFIK PERBANDINGAN
+# OPTIONS & GRAFIK
+view_mode = st.sidebar.radio("Mode Tampilan Grafik:", options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"])
 selected_date = st.sidebar.date_input("Pilih Tanggal September 2026:", value=datetime.date(2026, 9, current_day), min_value=datetime.date(2026, 9, 1), max_value=datetime.date(2026, 9, 30))
+
 df_daily = df[(df['Day'] == selected_date.day)]
+col_left, col_right = st.columns([2, 1])
 
-st.subheader(f"📈 Grafik Pasang Surut Air Laut Terverifikasi BMKG OFS ({selected_date.strftime('%d September 2026')})")
+with col_left:
+    st.subheader(f"📈 Hydro-Dynamic Curve ({selected_date.strftime('%d September 2026')})")
+    df_plot = df_daily if view_mode == "Mode Harian (24 Jam)" else df_daily[(df_daily['Hour'] >= current_hour) & (df_daily['Hour'] <= current_hour + 6)]
 
-fig = go.Figure()
+    fig = go.Figure()
 
-# Probolinggo BMKG OFS
-fig.add_trace(go.Scatter(
-    x=df_daily['Timestamp'],
-    y=df_daily['Sea_Level_Probolinggo'],
-    mode='lines+markers+text',
-    name='BMKG OFS Probolinggo (07°44\'10.79"S 113°12\'59.64"E)',
-    text=[f"{v:.2f}" for v in df_daily['Sea_Level_Probolinggo']],
-    textposition='top center',
-    textfont=dict(color='#ffeb3b', size=11),
-    line=dict(color='#ffeb3b', width=3),
-    marker=dict(size=7, color='#ffeb3b')
-))
-
-# AI ML Prediction
-fig.add_trace(go.Scatter(
-    x=df_daily['Timestamp'],
-    y=df_daily['ML_Predicted_Sea_Level_m'],
-    mode='lines+markers',
-    name='AI ML Model (Grati)',
-    line=dict(color='#00e5ff', width=2, dash='dash'),
-    marker=dict(size=5, symbol='x')
-))
-
-# Realtime Intake Point
-if selected_date.day == current_day:
+    # 1. Probolinggo BMKG Baseline
     fig.add_trace(go.Scatter(
-        x=[realtime_timestamp],
-        y=[realtime_level],
-        mode='markers+text',
-        name=f'Realtime Grati ({current_hour:02d}:00)',
-        text=[f"📍 {realtime_level:.2f}m"],
-        textposition='top right',
-        textfont=dict(color='#ff3d00', size=13, family="Arial Black"),
-        marker=dict(size=14, color='#ff3d00', symbol='diamond', line=dict(color='#ffffff', width=2))
+        x=df_plot['Timestamp'],
+        y=df_plot['Sea_Level_Probolinggo'],
+        mode='lines+markers+text',
+        name='BMKG Probolinggo (07°44\'10.79"S 113°12\'59.64"E)',
+        text=[f"{v:.2f}" for v in df_plot['Sea_Level_Probolinggo']],
+        textposition='top center',
+        textfont=dict(color='#ffeb3b', size=11),
+        line=dict(color='#ffeb3b', width=3),
+        marker=dict(size=7, color='#ffeb3b')
     ))
 
-fig.update_layout(
-    template='plotly_dark',
-    paper_bgcolor='rgba(15, 23, 42, 0.5)',
-    plot_bgcolor='rgba(15, 23, 42, 0.5)',
-    height=480,
-    font=dict(size=13, color="#ffffff"),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color="#ffffff")),
-    xaxis=dict(gridcolor='#334155'),
-    yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', range=[-0.1, 3.1])
-)
+    # 2. AI ML Prediction
+    fig.add_trace(go.Scatter(
+        x=df_plot['Timestamp'],
+        y=df_plot['ML_Predicted_Sea_Level_m'],
+        mode='lines+markers+text',
+        name='AI ML Prediction (Grati)',
+        text=[f"{v:.2f}" for v in df_plot['ML_Predicted_Sea_Level_m']],
+        textposition='bottom center',
+        textfont=dict(color='#00e5ff', size=10),
+        line=dict(color='#00e5ff', width=2, dash='dash'),
+        marker=dict(size=5, symbol='x', color='#00e5ff')
+    ))
 
-st.plotly_chart(fig, use_container_width=True)
+    # 3. Realtime Point Intake Grati
+    if selected_date.day == current_day:
+        fig.add_trace(go.Scatter(
+            x=[realtime_timestamp],
+            y=[realtime_level],
+            mode='markers+text',
+            name=f'Realtime Grati ({current_hour:02d}:00)',
+            text=[f"📍 {realtime_level:.2f}m"],
+            textposition='top right',
+            textfont=dict(color='#ff3d00', size=13, family="Arial Black"),
+            marker=dict(size=14, color='#ff3d00', symbol='diamond', line=dict(color='#ffffff', width=2))
+        ))
+
+    # 4. Critical Threshold
+    fig.add_trace(go.Scatter(
+        x=[df_plot['Timestamp'].min(), df_plot['Timestamp'].max()],
+        y=[0.2, 0.2],
+        mode='lines',
+        name='Batas Critical (0.2m)',
+        line=dict(color='#ff1744', width=2, dash='dot')
+    ))
+
+    # TAMPILAN GRAFIK DENGAN LEGEND JELAS & PUTIH TERANG
+    fig.update_layout(
+        template='plotly_dark',
+        paper_bgcolor='rgba(15, 23, 42, 0.5)',
+        plot_bgcolor='rgba(15, 23, 42, 0.5)',
+        margin=dict(l=20, r=20, t=30, b=20),
+        height=480,
+        font=dict(size=13, color="#ffffff"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=12, color="#ffffff")
+        ),
+        xaxis=dict(gridcolor='#334155', showgrid=True),
+        yaxis=dict(title='Tinggi Air Laut (Meter)', gridcolor='#334155', showgrid=True, range=[-0.1, 3.1])
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+with col_right:
+    st.subheader("🗺️ Perbandingan Posisi Stasiun")
+    # Peta memuat 2 titik lokasi: Probolinggo dan PLTGU Grati
+    map_data = pd.DataFrame({
+        'lat': [-7.736331, -7.644317],
+        'lon': [113.216567, 113.027350],
+        'name': ['BMKG Probolinggo', 'Intake PLTGU Grati']
+    })
+    st.map(map_data, zoom=10)
+
+st.divider()
+st.subheader("📊 Datagrid Telemetri Perbandingan Lokasi")
+st.dataframe(df_plot[['Timestamp', 'Sea_Level_Probolinggo', 'Sea_Level_Grati', 'ML_Predicted_Sea_Level_m']], use_container_width=True)
