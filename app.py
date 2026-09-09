@@ -2,31 +2,29 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import requests
 import io
 import datetime
 import urllib3
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
 
-# Safe Import untuk pytz (Zona Waktu)
+# Safe Import untuk pytz (Zona Waktu WIB)
 try:
     import pytz
     wib_tz = pytz.timezone('Asia/Jakarta')
     now = datetime.datetime.now(wib_tz)
 except Exception:
-    # Fallback jika pytz belum terinstal (UTC + 7 jam)
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
 
-# Safe Import untuk Auto-Refresh
+# Safe Import untuk Auto-Refresh 60 Detik
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh_installed = True
 except Exception:
     st_autorefresh_installed = False
 
-# Matikan warning SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Config Halaman
@@ -36,7 +34,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Jalankan Auto-Refresh jika library tersedia
 if st_autorefresh_installed:
     st_autorefresh(interval=60000, limit=1000, key="datarefresh")
 
@@ -135,42 +132,71 @@ rc4.metric("Status Koneksi BMKG", f"🟢 {bmkg_msg}" if bmkg_status else "🔴 O
 
 st.divider()
 
-# 4. SIDEBAR & GRAFIK VISUALISASI
-st.sidebar.header("⚙️ Kontrol & Filter")
-selected_month = st.sidebar.selectbox(
-    "Pilih Bulan Grafik:",
-    options=list(range(1, 13)),
-    index=current_month - 1,
-    format_func=lambda x: pd.to_datetime(f'2026-{x:02d}-01').strftime('%B')
+# ==========================================
+# 4. KONTROL SIDEBAR (HARIAN & PER JAM)
+# ==========================================
+st.sidebar.header("⚙️ Kontrol Grafik")
+
+view_mode = st.sidebar.radio(
+    "Pilih Tampilan Grafik:",
+    options=["Mode Harian (24 Jam)", "Mode Per Jam (Detail 6 Jam)"]
 )
 
-st.subheader(f"📈 Grafik Pasang Surut Bulan {pd.to_datetime(f'2026-{selected_month:02d}-01').strftime('%B 2026')}")
+selected_date = st.sidebar.date_input(
+    "Pilih Tanggal:",
+    value=datetime.date(2026, current_month, current_day),
+    min_value=datetime.date(2026, 1, 1),
+    max_value=datetime.date(2026, 12, 31)
+)
 
-df_filtered = df[df['Month'] == selected_month]
+# Filter Data Sesuai Tanggal
+df_daily = df[(df['Timestamp'].dt.date == selected_date)]
 
-fig, ax = plt.subplots(figsize=(12, 4))
-ax.plot(df_filtered['Timestamp'], df_filtered['Sea_Level_m'], label='Simulated / BMKG Baseline Level', color='#1f77b4', linewidth=1.5)
-ax.plot(df_filtered['Timestamp'], df_filtered['ML_Predicted_Sea_Level_m'], label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1)
+# ==========================================
+# 5. GRAFIK VISUALISASI HARIAN / PER JAM
+# ==========================================
+if view_mode == "Mode Harian (24 Jam)":
+    st.subheader(f"📈 Grafik Pasang Surut Harian ({selected_date.strftime('%d %B %Y')})")
+    df_plot = df_daily
+else:
+    st.subheader(f"⏱️ Grafik Pasang Surut Per Jam (Detail 6 Jam - {selected_date.strftime('%d %B %Y')})")
+    selected_hour_start = st.sidebar.slider("Pilih Jam Awal:", 0, 18, current_hour if current_hour <= 18 else 18)
+    df_plot = df_daily[(df_daily['Hour'] >= selected_hour_start) & (df_daily['Hour'] <= selected_hour_start + 6)]
+
+fig, ax = plt.subplots(figsize=(12, 4.5))
+
+ax.plot(df_plot['Timestamp'], df_plot['Sea_Level_m'], marker='o', label='Simulated / BMKG Baseline Level', color='#1f77b4', linewidth=2)
+ax.plot(df_plot['Timestamp'], df_plot['ML_Predicted_Sea_Level_m'], marker='x', label='ML Predicted Sea Level', color='#d62728', linestyle='--', linewidth=1.5)
 ax.axhline(y=1.4, color='green', linestyle=':', label='Mean Sea Level (1.4m)')
 
-if selected_month == current_month:
+# Penanda Garis Waktu Sekarang (jika tanggal yang dipilih adalah hari ini)
+if selected_date == datetime.date(2026, current_month, current_day):
     current_timestamp = pd.to_datetime(f"2026-{current_month:02d}-{current_day:02d} {current_hour:02d}:00:00")
-    ax.axvline(x=current_timestamp, color='purple', linestyle='-', linewidth=2, label=f'Waktu Sekarang ({now.strftime("%H:%M WIB")})')
+    if current_timestamp in df_plot['Timestamp'].values:
+        ax.axvline(x=current_timestamp, color='purple', linestyle='-', linewidth=2.5, label=f'Waktu Sekarang ({now.strftime("%H:%M WIB")})')
+
+# Format Sumbu X agar Menampilkan Jam dengan Jelas
+ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+ax.xaxis.set_major_locator(mdates.HourLocator(interval=1 if view_mode != "Mode Harian (24 Jam)" else 2))
 
 ax.set_ylabel('Sea Level (Meter)')
-ax.set_xlabel('Tanggal')
-ax.grid(True, linestyle='--', alpha=0.5)
+ax.set_xlabel('Jam (WIB)')
+ax.grid(True, linestyle='--', alpha=0.6)
 ax.legend(loc='upper right')
+plt.xticks(rotation=0)
+
 st.pyplot(fig)
 
-# 5. TABEL DATA & UNDUH
+# ==========================================
+# 6. TABEL DATA & UNDUH FILE
+# ==========================================
 st.divider()
 st.subheader("📊 Tabel Data & Unduh File")
 
-tab1, tab2 = st.tabs(["Preview Data", "Unduh Dataset"])
+tab1, tab2 = st.tabs(["Preview Data Terpilih", "Unduh Dataset Full"])
 
 with tab1:
-    st.dataframe(df_filtered, use_container_width=True)
+    st.dataframe(df_plot, use_container_width=True)
 
 with tab2:
     col_dl1, col_dl2 = st.columns(2)
